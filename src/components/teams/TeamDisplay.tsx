@@ -1,14 +1,7 @@
-// Updated TeamDisplay.tsx with smart randomization for manual mode
-
-import { useState } from 'react';
-import {
-  RefreshCw,
-  Trophy,
-  Plus,
-  Users,
-  Shuffle,
-} from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { RefreshCw, Plus, Shuffle } from 'lucide-react';
 import useStore from '../../store/useStore';
+import { useShallow } from 'zustand/react/shallow';
 import clsx from 'clsx';
 import EmptyTeamsState from './EmptyTeamState';
 import SkillLegend from './SkillLegend';
@@ -16,6 +9,7 @@ import UnassignedPlayersPool from './UnassignedPlayersPool';
 import { GlobalValidationSummary } from './validations';
 import DeleteTeamConfirmModal from '../../modals/DeleteTeamConfirmModal';
 import { EnhancedTeamCard } from './EnhancedTeamCard';
+import ConfirmDialog from '../ui/ConfirmDialog';
 
 export default function TeamDisplay() {
   const {
@@ -32,8 +26,29 @@ export default function TeamDisplay() {
     removeTeam,
     assignPlayerToTeam,
     removePlayerFromTeam,
-    fillRemainingTeams, // New action for partial randomization
-  } = useStore();
+    smartRandomizeTeams,
+    tournament,
+    endTournament,
+  } = useStore(
+    useShallow((state) => ({
+      teams: state.teams,
+      players: state.players,
+      randomizeTeams: state.randomizeTeams,
+      updateTeamName: state.updateTeamName,
+      movePlayerToTeam: state.movePlayerToTeam,
+      skillBalancingEnabled: state.skillBalancingEnabled,
+      skillCategories: state.skillCategories,
+      manualTeamMode: state.manualTeamMode,
+      setManualMode: state.setManualMode,
+      createEmptyTeam: state.createEmptyTeam,
+      removeTeam: state.removeTeam,
+      assignPlayerToTeam: state.assignPlayerToTeam,
+      removePlayerFromTeam: state.removePlayerFromTeam,
+      smartRandomizeTeams: state.smartRandomizeTeams,
+      tournament: state.tournament,
+      endTournament: state.endTournament,
+    }))
+  );
 
   const [isRandomizing, setIsRandomizing] = useState(false);
   const [editingTeamId, setEditingTeamId] = useState<number | null>(
@@ -50,25 +65,67 @@ export default function TeamDisplay() {
   );
   const [showDeleteTeamModal, setShowDeleteTeamModal] =
     useState(false);
+  const [confirmNewTeams, setConfirmNewTeams] = useState(false);
+  // Player picked by tap/click/keyboard, waiting for a target team
+  const [selectedPlayerId, setSelectedPlayerId] = useState<
+    number | null
+  >(null);
+  const randomizeTimer = useRef<ReturnType<typeof setTimeout>>(
+    undefined
+  );
 
-  const handleRandomize = () => {
+  useEffect(() => () => clearTimeout(randomizeTimer.current), []);
+
+  const runWithAnimation = (action: () => void) => {
     setIsRandomizing(true);
-    setTimeout(() => {
-      randomizeTeams();
+    setSelectedPlayerId(null);
+    randomizeTimer.current = setTimeout(() => {
+      action();
       setIsRandomizing(false);
     }, 800);
   };
 
-  const handleSmartRandomize = () => {
-    setIsRandomizing(true);
-    setTimeout(() => {
-      if (manualTeamMode) {
-        fillRemainingTeams();
-      } else {
-        randomizeTeams();
+  const handleRandomize = () => {
+    // New teams would no longer match the tournament in progress
+    if (tournament) {
+      setConfirmNewTeams(true);
+      return;
+    }
+    runWithAnimation(randomizeTeams);
+  };
+
+  const handleSmartRandomize = () =>
+    runWithAnimation(smartRandomizeTeams);
+
+  const movePlayer = (playerId: number, teamIndex: number) => {
+    if (manualTeamMode) {
+      const targetTeam = teams[teamIndex];
+      if (targetTeam) {
+        assignPlayerToTeam(playerId, targetTeam.id);
       }
-      setIsRandomizing(false);
-    }, 800);
+    } else {
+      movePlayerToTeam(playerId, teamIndex);
+    }
+  };
+
+  const handleSelectPlayer = (playerId: number) => {
+    setSelectedPlayerId((current) =>
+      current === playerId ? null : playerId
+    );
+  };
+
+  const handlePlaceSelected = (teamIndex: number) => {
+    if (selectedPlayerId !== null) {
+      movePlayer(selectedPlayerId, teamIndex);
+    }
+    setSelectedPlayerId(null);
+  };
+
+  const handleUnassignSelected = () => {
+    if (selectedPlayerId !== null) {
+      removePlayerFromTeam(selectedPlayerId);
+    }
+    setSelectedPlayerId(null);
   };
 
   const handleDragStart = (
@@ -114,16 +171,10 @@ export default function TeamDisplay() {
     setDragOverTeam(null);
 
     if (draggedPlayerId !== null) {
-      if (manualTeamMode) {
-        const targetTeam = teams[teamIndex];
-        if (targetTeam) {
-          assignPlayerToTeam(draggedPlayerId, targetTeam.id);
-        }
-      } else {
-        movePlayerToTeam(draggedPlayerId, teamIndex);
-      }
+      movePlayer(draggedPlayerId, teamIndex);
     }
     setDraggedPlayerId(null);
+    setSelectedPlayerId(null);
   };
 
   // Handle drop on unassigned area
@@ -135,6 +186,7 @@ export default function TeamDisplay() {
       removePlayerFromTeam(draggedPlayerId);
     }
     setDraggedPlayerId(null);
+    setSelectedPlayerId(null);
   };
 
   const handleUnassignedDragEnter = (
@@ -145,7 +197,8 @@ export default function TeamDisplay() {
   };
 
   const handleTeamNameEdit = (teamId: number, newName: string) => {
-    updateTeamName(teamId, newName || `Team ${teamId}`);
+    const teamNumber = teams.findIndex((t) => t.id === teamId) + 1;
+    updateTeamName(teamId, newName.trim() || `Team ${teamNumber}`);
     setEditingTeamId(null);
   };
 
@@ -168,246 +221,243 @@ export default function TeamDisplay() {
   );
   const hasUnassignedPlayers = unassignedPlayers.length > 0;
   const hasExistingTeams = teams.length > 0;
+  const selectedPlayer = players.find((p) => p.id === selectedPlayerId);
+  const selectedPlayerIsAssigned =
+    selectedPlayer !== undefined && selectedPlayer.teamId !== null;
+
+  const subtitle = manualTeamMode
+    ? hasExistingTeams
+      ? 'Drag players between teams, or select a player and choose Move here.'
+      : 'Create teams yourself, then move players into them.'
+    : hasExistingTeams
+    ? 'Drag players to rearrange. Locked players stay on their team when you randomize again.'
+    : 'Randomize to split your players into teams.';
 
   return (
-    <div
-      className='card animate-fade-in min-h-[600px]'
-      style={{ animationDelay: '0.2s' }}
-      data-tour='generate-teams'
+    <section
+      aria-labelledby='teams-heading'
+      className='min-w-0'
     >
       {/* Header */}
-      <div className='flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8'>
-        <div className='flex items-center gap-3'>
-          <div className='p-3 bg-gradient-to-br from-primary/20 to-rose-500/20 rounded-xl'>
-            <Trophy className='text-primary' size={28} />
-          </div>
-          <div>
-            <h2 className='text-2xl font-bold'>Teams</h2>
-            <p className='text-sm text-gray-600 dark:text-gray-400 mt-0.5'>
-              {manualTeamMode
-                ? hasUnassignedPlayers
-                  ? hasExistingTeams
-                    ? 'Fill remaining spots or create new teams'
-                    : 'Create teams and assign unassigned players'
-                  : 'Create teams manually and drag players to assign them'
-                : teams.length > 0
-                ? 'Drag players to rearrange teams'
-                : 'Click randomize to create teams'}
-            </p>
-          </div>
+      <div className='mb-6 flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between'>
+        <div>
+          <h2 id='teams-heading' className='section-title text-4xl'>
+            Teams
+            {hasExistingTeams && (
+              <span className='ml-3 align-baseline text-muted'>
+                {teams.length}
+              </span>
+            )}
+          </h2>
+          <p className='subtle mt-1 max-w-prose'>{subtitle}</p>
         </div>
 
-        <div className='flex gap-2'>
-          {/* Mode Toggle */}
-          <button
-            onClick={() => setManualMode(!manualTeamMode)}
-            className={clsx(
-              'px-4 py-2 rounded-lg font-medium text-sm transition-all duration-200',
-              manualTeamMode
-                ? 'bg-blue-500 text-white shadow-lg'
-                : 'bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600'
-            )}
-          >
-            {manualTeamMode ? 'Manual Mode' : 'Auto Mode'}
-          </button>
+        <div
+          className='flex flex-wrap items-center gap-2'
+          data-tour='generate-teams'
+        >
+          <div className='segmented' role='group' aria-label='Team mode'>
+            <button
+              type='button'
+              aria-pressed={!manualTeamMode}
+              onClick={() => setManualMode(false)}
+            >
+              Randomize
+            </button>
+            <button
+              type='button'
+              aria-pressed={manualTeamMode}
+              onClick={() => setManualMode(true)}
+            >
+              Manual
+            </button>
+          </div>
 
-          {/* Action Buttons */}
           {manualTeamMode ? (
-            <div className='flex gap-2'>
+            <>
               <button
                 onClick={() => createEmptyTeam()}
-                className='btn-primary flex items-center justify-center gap-2'
+                className='btn-outline'
               >
-                <Plus size={18} />
-                Add Team
+                <Plus size={16} />
+                New team
               </button>
-
-              {/* Fill Remaining Button - only show if there are unassigned players */}
               {hasUnassignedPlayers && (
                 <button
                   onClick={handleSmartRandomize}
-                  className={clsx(
-                    'btn-secondary flex items-center justify-center gap-2 min-w-[140px]',
-                    'bg-green-500 hover:bg-green-600 text-white',
-                    isRandomizing && 'animate-pulse'
-                  )}
+                  className='btn-primary'
                   disabled={isRandomizing}
-                  title={`Assign ${
-                    unassignedPlayers.length
-                  } unassigned players to ${
+                  title={`Place ${unassignedPlayers.length} unassigned ${
+                    unassignedPlayers.length === 1 ? 'player' : 'players'
+                  } into ${
                     hasExistingTeams
-                      ? 'existing teams or create new ones'
+                      ? 'existing teams, adding teams if needed'
                       : 'new teams'
                   }`}
                 >
                   <Shuffle
-                    size={18}
+                    size={16}
                     className={clsx(isRandomizing && 'animate-spin')}
                   />
-                  {isRandomizing ? 'Assigning...' : 'Fill Remaining'}
+                  {isRandomizing ? 'Placing players…' : 'Fill remaining'}
                 </button>
               )}
-            </div>
+            </>
           ) : (
             <button
               onClick={handleRandomize}
-              className={clsx(
-                'btn-primary flex items-center justify-center gap-2 min-w-[180px]',
-                isRandomizing && 'animate-pulse'
-              )}
+              className='btn-primary'
               disabled={activePlayers.length === 0 || isRandomizing}
             >
               <RefreshCw
-                size={18}
+                size={16}
                 className={clsx(isRandomizing && 'animate-spin')}
               />
-              {isRandomizing ? 'Randomizing...' : 'Randomize Teams'}
+              {isRandomizing
+                ? 'Randomizing…'
+                : hasExistingTeams
+                ? 'Randomize again'
+                : 'Randomize teams'}
             </button>
           )}
         </div>
       </div>
 
-      {/* Unassigned Players Alert (Manual Mode) */}
-      {manualTeamMode && hasUnassignedPlayers && (
-        <div className='mb-6 p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg'>
-          <div className='flex items-center justify-between'>
-            <div className='flex items-center gap-3'>
-              <div className='p-2 bg-amber-100 dark:bg-amber-800 rounded-lg'>
-                <Users
-                  className='text-amber-600 dark:text-amber-400'
-                  size={16}
-                />
-              </div>
-              <div>
-                <p className='text-sm font-medium text-amber-800 dark:text-amber-200'>
-                  {unassignedPlayers.length} players need team
-                  assignments
-                </p>
-                <p className='text-xs text-amber-700 dark:text-amber-300 mt-1'>
-                  {hasExistingTeams
-                    ? 'These players will fill existing teams first, then create new teams as needed'
-                    : 'Click "Fill Remaining" to automatically create teams for these players'}
-                </p>
-              </div>
-            </div>
+      <div className='space-y-5'>
+        {/* Unassigned players (Manual mode) */}
+        {manualTeamMode && hasUnassignedPlayers && hasExistingTeams && (
+          <p className='notice-warn'>
+            <strong>
+              {unassignedPlayers.length}{' '}
+              {unassignedPlayers.length === 1 ? 'player needs' : 'players need'}{' '}
+              a team.
+            </strong>{' '}
+            Fill remaining places them in the emptiest teams first and
+            adds teams if needed.
+          </p>
+        )}
+
+        {/* Tap-to-move hint */}
+        {selectedPlayer && (
+          <div className='notice-warn flex items-center justify-between gap-3'>
+            <span>
+              Moving <strong>{selectedPlayer.name}</strong>. Choose Move
+              here on a team
+              {manualTeamMode && selectedPlayerIsAssigned
+                ? ', or Unassign'
+                : ''}
+              .
+            </span>
             <button
-              onClick={handleSmartRandomize}
-              className={clsx(
-                'px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-medium text-sm transition-colors flex items-center gap-2',
-                isRandomizing && 'animate-pulse cursor-not-allowed'
-              )}
-              disabled={isRandomizing}
+              type='button'
+              onClick={() => setSelectedPlayerId(null)}
+              className='btn-ghost h-8'
             >
-              <Shuffle
-                size={14}
-                className={clsx(isRandomizing && 'animate-spin')}
-              />
-              {isRandomizing ? 'Assigning...' : 'Auto-assign'}
+              Cancel
             </button>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Skill Legend */}
-      <SkillLegend
-        skillBalancingEnabled={skillBalancingEnabled}
-        skillCategories={skillCategories}
-        showLegend={teams.length > 0}
-      />
-
-      {/* Main Content */}
-      {teams.length === 0 && !manualTeamMode ? (
-        <EmptyTeamsState
+        <SkillLegend
           skillBalancingEnabled={skillBalancingEnabled}
+          skillCategories={skillCategories}
+          showLegend={teams.length > 0}
         />
-      ) : (
-        <div className='space-y-6'>
-          {/* Global Validation Summary */}
-          <GlobalValidationSummary />
 
-          {/* Unassigned Players Pool (Manual Mode Only) */}
-          {manualTeamMode && hasUnassignedPlayers && (
-            <UnassignedPlayersPool
-              players={unassignedPlayers}
-              dragOverTeam={dragOverTeam}
-              onDragStart={handleDragStart}
-              onDragEnd={handleDragEnd}
-              onDragOver={handleDragOver}
-              onDragEnter={handleUnassignedDragEnter}
-              onDragLeave={handleDragLeave}
-              onDrop={handleUnassignedDrop}
-            />
-          )}
+        {teams.length === 0 && !manualTeamMode ? (
+          <EmptyTeamsState
+            skillBalancingEnabled={skillBalancingEnabled}
+            activePlayerCount={activePlayers.length}
+          />
+        ) : (
+          <>
+            <GlobalValidationSummary />
 
-          {/* Teams Grid */}
-          {teams.length === 0 && manualTeamMode ? (
-            <div className='text-center py-12'>
-              <Trophy
-                size={48}
-                className='mx-auto mb-4 text-gray-300 opacity-50'
-              />
-              <h3 className='text-lg font-semibold text-gray-700 dark:text-gray-300 mb-2'>
-                {hasUnassignedPlayers
-                  ? 'Ready to create teams'
-                  : 'No teams created yet'}
-              </h3>
-              <p className='text-gray-500 dark:text-gray-400 mb-6'>
-                {hasUnassignedPlayers
-                  ? `You have ${unassignedPlayers.length} players ready to be assigned. Click "Add Team" to create teams manually, or "Fill Remaining" to auto-create teams.`
-                  : 'Click "Add Team" to create your first team, then drag players to assign them.'}
-              </p>
-              <div className='flex justify-center gap-3'>
-                <button
-                  onClick={() => createEmptyTeam()}
-                  className='btn-primary flex items-center gap-2'
-                >
-                  <Plus size={18} />
-                  Add Team
-                </button>
-                {hasUnassignedPlayers && (
-                  <button
-                    onClick={handleSmartRandomize}
-                    className='btn-secondary bg-green-500 hover:bg-green-600 text-white flex items-center gap-2'
-                    disabled={isRandomizing}
-                  >
-                    <Shuffle
-                      size={18}
-                      className={clsx(
-                        isRandomizing && 'animate-spin'
-                      )}
-                    />
-                    {isRandomizing
-                      ? 'Creating...'
-                      : 'Auto-create Teams'}
-                  </button>
-                )}
-              </div>
-            </div>
-          ) : (
-            <div className='grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6'>
-              {teams.map((team, teamIndex) => (
-                <EnhancedTeamCard
-                  key={team.id}
-                  team={team}
-                  teamIndex={teamIndex}
+            {manualTeamMode &&
+              (hasUnassignedPlayers || selectedPlayerIsAssigned) && (
+                <UnassignedPlayersPool
+                  players={unassignedPlayers}
+                  selectedPlayerId={selectedPlayerId}
+                  onSelectPlayer={handleSelectPlayer}
+                  onUnassignSelected={
+                    selectedPlayerIsAssigned
+                      ? handleUnassignSelected
+                      : undefined
+                  }
                   dragOverTeam={dragOverTeam}
-                  editingTeamId={editingTeamId}
-                  manualTeamMode={manualTeamMode}
-                  onDragOver={handleDragOver}
-                  onDragEnter={handleDragEnter}
-                  onDragLeave={handleDragLeave}
-                  onDrop={handleDrop}
-                  onTeamNameEdit={handleTeamNameEdit}
-                  onRemoveTeam={handleRemoveTeam}
-                  onEditTeam={setEditingTeamId}
                   onDragStart={handleDragStart}
                   onDragEnd={handleDragEnd}
+                  onDragOver={handleDragOver}
+                  onDragEnter={handleUnassignedDragEnter}
+                  onDragLeave={handleDragLeave}
+                  onDrop={handleUnassignedDrop}
                 />
-              ))}
-            </div>
-          )}
-        </div>
-      )}
+              )}
+
+            {teams.length === 0 ? (
+              <div className='rounded-panel border-2 border-dashed border-line px-6 py-14 text-center'>
+                <p className='font-display text-4xl font-bold uppercase leading-none'>
+                  No teams yet
+                </p>
+                <p className='mx-auto mt-3 max-w-md text-muted'>
+                  {hasUnassignedPlayers
+                    ? `${unassignedPlayers.length} ${
+                        unassignedPlayers.length === 1
+                          ? 'player is'
+                          : 'players are'
+                      } ready. Create teams one by one, or let Fill remaining create them for you.`
+                    : 'Create your first team, then add players to it.'}
+                </p>
+                <button
+                  onClick={() => createEmptyTeam()}
+                  className='btn-outline mt-5'
+                >
+                  <Plus size={16} />
+                  New team
+                </button>
+              </div>
+            ) : (
+              <div className='grid grid-cols-1 gap-4 md:grid-cols-2 2xl:grid-cols-3'>
+                {teams.map((team, teamIndex) => (
+                  <EnhancedTeamCard
+                    key={team.id}
+                    team={team}
+                    teamIndex={teamIndex}
+                    dragOverTeam={dragOverTeam}
+                    editingTeamId={editingTeamId}
+                    manualTeamMode={manualTeamMode}
+                    onDragOver={handleDragOver}
+                    onDragEnter={handleDragEnter}
+                    onDragLeave={handleDragLeave}
+                    onDrop={handleDrop}
+                    onTeamNameEdit={handleTeamNameEdit}
+                    onRemoveTeam={handleRemoveTeam}
+                    onEditTeam={setEditingTeamId}
+                    onDragStart={handleDragStart}
+                    onDragEnd={handleDragEnd}
+                    selectedPlayerId={selectedPlayerId}
+                    onSelectPlayer={handleSelectPlayer}
+                    onPlaceSelected={handlePlaceSelected}
+                  />
+                ))}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
+      <ConfirmDialog
+        isOpen={confirmNewTeams}
+        onClose={() => setConfirmNewTeams(false)}
+        onConfirm={() => {
+          setConfirmNewTeams(false);
+          endTournament();
+          runWithAnimation(randomizeTeams);
+        }}
+        title='Make new teams?'
+        description='A tournament is in progress with the current teams. Randomizing ends it and deletes its results.'
+        confirmLabel='End it and randomize'
+      />
 
       <DeleteTeamConfirmModal
         isOpen={showDeleteTeamModal}
@@ -416,8 +466,8 @@ export default function TeamDisplay() {
           setShowDeleteTeamModal(false);
           setTeamToDelete(null);
         }}
-        teamId={teamToDelete || 0}
+        teamId={teamToDelete ?? 0}
       />
-    </div>
+    </section>
   );
 }

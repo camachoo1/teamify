@@ -42,8 +42,58 @@ export const calculateOptimalTeamCount = (
 };
 
 /**
+ * Returns a uniformly shuffled copy of an array (Fisher-Yates).
+ *
+ * @param items - Array to shuffle (not modified)
+ * @returns New array with the same items in random order
+ */
+export const shuffle = <T>(items: T[]): T[] => {
+  const result = [...items];
+  for (let i = result.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [result[i], result[j]] = [result[j], result[i]];
+  }
+  return result;
+};
+
+/**
+ * Brings team rosters and the master player list back in sync.
+ * Team rosters hold copies of players, so this refreshes each copy from
+ * the master list, drops players that were removed or moved to reserves,
+ * removes duplicates, and recomputes every player's teamId (team index).
+ *
+ * @param players - Master player list
+ * @param teams - Teams whose rosters may be stale
+ * @returns Synced players and teams
+ */
+export const syncPlayersAndTeams = (
+  players: Player[],
+  teams: Team[]
+): { players: Player[]; teams: Team[] } => {
+  const playersById = new Map(players.map((p) => [p.id, p]));
+  const seen = new Set<number>();
+
+  const syncedTeams = teams.map((team, index) => ({
+    ...team,
+    players: team.players.flatMap((teamPlayer) => {
+      const current = playersById.get(teamPlayer.id);
+      if (!current || current.isReserve || seen.has(teamPlayer.id)) {
+        return [];
+      }
+      seen.add(teamPlayer.id);
+      return [{ ...current, teamId: index }];
+    }),
+  }));
+
+  return {
+    teams: syncedTeams,
+    players: updatePlayerTeamAssignments(players, syncedTeams),
+  };
+};
+
+/**
  * Groups players by their skill levels for balanced distribution.
- * Players without skill levels are placed in an 'unassigned' group.
+ * Players without a (known) skill level are placed in an 'unassigned' group.
  * Locked players are excluded from the grouping and shuffling.
  *
  * @param players - Array of players to group by skill level
@@ -57,14 +107,19 @@ export const groupPlayersBySkill = (
   const skillGroups: { [key: string]: Player[] } = {};
 
   skillCategories.forEach((category) => {
-    skillGroups[category.id] = players
-      .filter((p) => p.skillLevel === category.id && !p.locked)
-      .sort(() => Math.random() - 0.5);
+    skillGroups[category.id] = shuffle(
+      players.filter((p) => p.skillLevel === category.id && !p.locked)
+    );
   });
 
-  skillGroups['unassigned'] = players
-    .filter((p) => !p.skillLevel && !p.locked)
-    .sort(() => Math.random() - 0.5);
+  const knownCategoryIds = new Set(skillCategories.map((c) => c.id));
+  skillGroups['unassigned'] = shuffle(
+    players.filter(
+      (p) =>
+        !p.locked &&
+        (!p.skillLevel || !knownCategoryIds.has(p.skillLevel))
+    )
+  );
 
   return skillGroups;
 };
@@ -141,40 +196,30 @@ export const distributePlayersByRules = (
     if (requiredCount > 0 && skillGroups[categoryId]) {
       const playersInCategory = skillGroups[categoryId];
 
-      for (let teamIndex = 0; teamIndex < teams.length; teamIndex++) {
+      // Round-robin so a scarce category is spread across teams
+      // instead of filling the first teams' quotas completely
+      for (
+        let round = 0;
+        round < requiredCount && playersInCategory.length > 0;
+        round++
+      ) {
         for (
-          let i = 0;
-          i < requiredCount && playersInCategory.length > 0;
-          i++
+          let teamIndex = 0;
+          teamIndex < teams.length && playersInCategory.length > 0;
+          teamIndex++
         ) {
-          const player = playersInCategory.shift();
-          if (player) {
-            teams[teamIndex].players.push({
-              ...player,
-              teamId: teamIndex,
-            });
-          }
+          const player = playersInCategory.shift()!;
+          teams[teamIndex].players.push({
+            ...player,
+            teamId: teamIndex,
+          });
         }
       }
     }
   });
 
   // Fill remaining spots with any remaining players
-  const remainingPlayers = Object.values(skillGroups).flat();
-  remainingPlayers.forEach((player) => {
-    const teamIndex = teams.reduce(
-      (minIdx, team, idx) =>
-        team.players.length < teams[minIdx].players.length
-          ? idx
-          : minIdx,
-      0
-    );
-
-    teams[teamIndex].players.push({
-      ...player,
-      teamId: teamIndex,
-    });
-  });
+  addPlayersToLeastFilledTeams(teams, Object.values(skillGroups).flat());
 };
 
 /**
@@ -188,20 +233,49 @@ export const distributePlayersEvenly = (
   teams: Team[],
   skillGroups: { [key: string]: Player[] }
 ): void => {
+  // Continue the rotation across groups so team sizes stay balanced
+  let nextTeam = 0;
   Object.values(skillGroups).forEach((skillGroup) => {
-    skillGroup.forEach((player, index) => {
-      const teamIndex = index % teams.length;
+    skillGroup.forEach((player) => {
+      const teamIndex = nextTeam % teams.length;
       teams[teamIndex].players.push({
         ...player,
         teamId: teamIndex,
       });
+      nextTeam++;
     });
   });
 };
 
 /**
+ * Adds each player to the team with the fewest players. Because the
+ * least-filled team is always chosen, teams only grow past the team size
+ * once every team is full, and then they grow evenly (the same overflow
+ * behavior as a full randomization).
+ *
+ * @param teams - Array of teams to populate (may already have players)
+ * @param players - Players to add, in placement order
+ */
+export const addPlayersToLeastFilledTeams = (
+  teams: Team[],
+  players: Player[]
+): void => {
+  if (teams.length === 0) return;
+  players.forEach((player) => {
+    const teamIndex = teams.reduce(
+      (minIdx, team, idx) =>
+        team.players.length < teams[minIdx].players.length
+          ? idx
+          : minIdx,
+      0
+    );
+    teams[teamIndex].players.push({ ...player, teamId: teamIndex });
+  });
+};
+
+/**
  * Adds locked players to their appropriate teams.
- * Places players in their assigned team if valid, otherwise defaults to team 0.
+ * Places players in their assigned team if valid, otherwise adds them to the least-filled team.
  *
  * @param teams - Array of teams to add locked players to
  * @param lockedPlayers - Players that are locked to specific teams
@@ -214,7 +288,7 @@ export const addLockedPlayers = (
     if (player.teamId !== null && player.teamId < teams.length) {
       teams[player.teamId].players.push(player);
     } else {
-      teams[0].players.push({ ...player, teamId: 0 });
+      addPlayersToLeastFilledTeams(teams, [player]);
     }
   });
 };
@@ -286,32 +360,21 @@ export const performStandardRandomization = (
     (p) => !p.locked
   );
   const lockedActivePlayers = activePlayers.filter((p) => p.locked);
-  const shuffled = [...unlockedActivePlayers].sort(
-    () => Math.random() - 0.5
-  );
+  const playersToPlace = [...unlockedActivePlayers];
 
   const newTeams = createEmptyTeams(numTeams);
 
   lockedActivePlayers.forEach((player) => {
     if (player.teamId !== null && player.teamId < numTeams) {
       newTeams[player.teamId].players.push(player);
+    } else {
+      // No valid team to stay on: place like an unlocked player
+      playersToPlace.push(player);
     }
   });
 
   // Distribute unlocked players evenly
-  shuffled.forEach((player) => {
-    const teamIndex = newTeams.reduce(
-      (minIdx, team, idx) =>
-        team.players.length < newTeams[minIdx].players.length
-          ? idx
-          : minIdx,
-      0
-    );
-    newTeams[teamIndex].players.push({
-      ...player,
-      teamId: teamIndex,
-    });
-  });
+  addPlayersToLeastFilledTeams(newTeams, shuffle(playersToPlace));
 
   return newTeams;
 };
@@ -324,18 +387,22 @@ export const performStandardRandomization = (
  * @param teams - Array of teams to apply naming to
  * @param teamNamingCategoryId - Skill category ID to use for naming
  * @param allPlayers - Complete player list for skill level lookup
+ * @param shouldRename - Optional filter; teams it rejects keep their name
  * @returns Array of teams with updated names
  */
 export const applyCustomTeamNaming = (
   teams: Team[],
   teamNamingCategoryId: string | null,
-  allPlayers: Player[]
+  allPlayers: Player[],
+  shouldRename: (team: Team, index: number) => boolean = () => true
 ): Team[] => {
   if (!teamNamingCategoryId) {
     return teams;
   }
 
   return teams.map((team, index) => {
+    if (!shouldRename(team, index)) return team;
+
     const namingPlayer = team.players.find((player) => {
       const playerData = allPlayers.find((p) => p.id === player.id);
       return playerData?.skillLevel === teamNamingCategoryId;
@@ -380,30 +447,48 @@ export const updatePlayerTeamAssignments = (
 
 /**
  * Creates a history entry for the team randomization.
- * Captures the current state including players, teams, and event info
- * for later retrieval and replay.
+ * Captures the current state including players, teams, event info and
+ * team settings for later retrieval and replay.
  *
  * @param updatedPlayers - Player list with updated team assignments
  * @param finalTeams - Final team composition after randomization
- * @param eventName - Name of the current event
- * @param organizerName - Name of the event organizer
+ * @param settings - Event info and team settings to save with the entry
  * @returns History entry object with timestamp and deep-copied data
  */
 export const createHistoryEntry = (
   updatedPlayers: Player[],
   finalTeams: Team[],
-  eventName: string,
-  organizerName: string
+  settings: HistorySettings
 ): HistoryEntry => {
   return {
     id: Date.now(),
     timestamp: new Date().toISOString(),
     players: updatedPlayers,
     teams: JSON.parse(JSON.stringify(finalTeams)),
-    eventName,
-    organizerName,
+    eventName: settings.eventName,
+    organizerName: settings.organizerName,
+    maxTeams: settings.maxTeams,
+    teamSize: settings.teamSize,
+    reservePlayersEnabled: settings.reservePlayersEnabled,
+    skillBalancingEnabled: settings.skillBalancingEnabled,
+    skillCategories: settings.skillCategories,
+    teamCompositionRules: settings.teamCompositionRules,
+    teamNamingCategoryId: settings.teamNamingCategoryId,
   };
 };
+
+type HistorySettings = Pick<
+  AppStore,
+  | 'eventName'
+  | 'organizerName'
+  | 'maxTeams'
+  | 'teamSize'
+  | 'reservePlayersEnabled'
+  | 'skillBalancingEnabled'
+  | 'skillCategories'
+  | 'teamCompositionRules'
+  | 'teamNamingCategoryId'
+>;
 
 /**
  * Validates team composition against skill balancing rules.
@@ -549,10 +634,6 @@ export const distributePlayersByRulesWithDeficits = (
               teams[teamInfo.teamIndex].players.length <
               state.teamSize;
             assignedThisRound = true;
-
-            console.log(
-              `Round ${round}: Assigned ${player.name} (${categoryId}) to ${teamInfo.teamName}`
-            );
           }
         });
 
@@ -565,36 +646,13 @@ export const distributePlayersByRulesWithDeficits = (
     }
   });
 
-  const remainingPlayers = Object.values(skillGroups).flat();
-
-  remainingPlayers.forEach((player, index) => {
-    const teamsWithSpace = teams.filter(
-      (team) => team.players.length < state.teamSize
-    );
-
-    if (teamsWithSpace.length > 0) {
-      const targetTeamIndex = teams.findIndex(
-        (team) =>
-          team.id === teamsWithSpace[index % teamsWithSpace.length].id
-      );
-
-      if (
-        targetTeamIndex !== -1 &&
-        teams[targetTeamIndex].players.length < state.teamSize
-      ) {
-        teams[targetTeamIndex].players.push({
-          ...player,
-          teamId: targetTeamIndex,
-        });
-      }
-    }
-  });
+  addPlayersToLeastFilledTeams(teams, Object.values(skillGroups).flat());
 };
 
 /**
  * Adds locked players to teams while respecting team size limits.
  * Attempts to place players in their preferred team if it has space,
- * otherwise finds the first available team with capacity.
+ * otherwise adds them to the least-filled team.
  *
  * @param teams - Array of teams to add locked players to
  * @param lockedPlayers - Players that are locked and need team assignment
@@ -606,26 +664,14 @@ export const addLockedPlayersToPartialTeams = (
   teamSize: number
 ): void => {
   lockedPlayers.forEach((player) => {
-    let targetTeamIndex = 0;
-
     if (
       player.teamId !== null &&
       player.teamId < teams.length &&
       teams[player.teamId].players.length < teamSize
     ) {
-      targetTeamIndex = player.teamId;
+      teams[player.teamId].players.push({ ...player });
     } else {
-      const teamWithSpace = teams.findIndex(
-        (team) => team.players.length < teamSize
-      );
-      targetTeamIndex = teamWithSpace !== -1 ? teamWithSpace : 0;
-    }
-
-    if (teams[targetTeamIndex].players.length < teamSize) {
-      teams[targetTeamIndex].players.push({
-        ...player,
-        teamId: targetTeamIndex,
-      });
+      addPlayersToLeastFilledTeams(teams, [player]);
     }
   });
 };

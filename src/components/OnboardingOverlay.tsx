@@ -1,12 +1,5 @@
-import {
-  X,
-  ChevronRight,
-  ChevronLeft,
-  Users,
-  Settings,
-  Trophy,
-  Share2,
-} from 'lucide-react';
+import { X, ChevronRight, ChevronLeft } from 'lucide-react';
+import clsx from 'clsx';
 import { useOnboarding } from '../hooks/useOnboarding';
 
 interface OnboardingOverlayProps {
@@ -50,106 +43,72 @@ const OnboardingOverlay = ({
     }
   };
 
-  // Get the appropriate icon based on iconType
-  const getIcon = () => {
-    switch (currentStepData.iconType) {
-      case 'users':
-        return currentStepData.title === 'Welcome to Teamify!' ? (
-          <Users className='w-8 h-8 text-primary' />
-        ) : (
-          <Users className='w-6 h-6 text-green-600' />
-        );
-      case 'settings':
-        return <Settings className='w-6 h-6 text-blue-600' />;
-      case 'trophy':
-        return <Trophy className='w-6 h-6 text-orange-600' />;
-      case 'share':
-        return <Share2 className='w-6 h-6 text-purple-600' />;
-      default:
-        return <Users className='w-6 h-6 text-primary' />;
-    }
-  };
-
   if (!isOpen) return null;
 
   return (
-    <div className='fixed inset-0 bg-black/60 backdrop-blur-sm z-50'>
-      {/* Tooltip */}
+    <div className='fixed inset-0 z-50 bg-ink/45'>
       <div
-        className={`absolute bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 p-6 w-96 max-w-[90vw] transition-all duration-300 ${
-          isTransitioning
-            ? 'opacity-0 pointer-events-none'
-            : 'opacity-100'
-        }`}
+        role='dialog'
+        aria-modal='true'
+        aria-labelledby='tour-title'
+        className={clsx(
+          'absolute w-96 max-w-[90vw] rounded-panel border border-line bg-surface p-6 shadow-2xl shadow-ink/25 transition-opacity duration-200',
+          isTransitioning ? 'pointer-events-none opacity-0' : 'opacity-100'
+        )}
         style={tooltipPosition}
       >
-        {/* Close button */}
         <button
           onClick={handleClose}
-          className='absolute top-4 right-4 p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors'
+          className='icon-btn absolute right-3 top-3'
           aria-label='Close tour'
         >
-          <X size={20} className='text-gray-500' />
+          <X size={18} />
         </button>
 
-        {/* Content */}
-        <div className='mb-6'>
-          <div className='flex items-center gap-3 mb-3'>
-            {getIcon()}
-            <h3 className='text-xl font-bold text-gray-900 dark:text-gray-100'>
-              {currentStepData.title}
-            </h3>
-          </div>
-          <p className='text-gray-600 dark:text-gray-300 leading-relaxed'>
-            {currentStepData.description}
-          </p>
-        </div>
+        <p className='subtle mb-2'>
+          {isFirstStep
+            ? 'Quick tour'
+            : `Step ${currentStep} of ${totalSteps - 1}`}
+        </p>
+        <h3
+          id='tour-title'
+          className='mb-2 pr-8 font-display text-3xl font-bold leading-none'
+        >
+          {currentStepData.title}
+        </h3>
+        <p className='mb-6 text-muted'>{currentStepData.description}</p>
 
-        {/* Progress indicators */}
-        <div className='flex justify-center gap-2 mb-6'>
+        <div className='mb-6 flex gap-1.5' aria-hidden='true'>
           {Array.from({ length: totalSteps }).map((_, index) => (
-            <div
+            <span
               key={index}
-              className={`w-2 h-2 rounded-full transition-colors ${
-                index === currentStep
-                  ? 'bg-primary'
-                  : index < currentStep
-                  ? 'bg-primary/60'
-                  : 'bg-gray-300 dark:bg-gray-600'
-              }`}
+              className={clsx(
+                'h-1.5 flex-1 rounded-full transition-colors',
+                index <= currentStep ? 'bg-accent' : 'bg-sunk'
+              )}
             />
           ))}
         </div>
 
-        {/* Navigation */}
-        <div className='flex items-center justify-between'>
-          <div className='flex gap-2'>
-            {!isFirstStep && (
-              <button
-                onClick={prevStep}
-                className='flex items-center gap-2 px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors'
-              >
-                <ChevronLeft size={16} />
-                Back
-              </button>
-            )}
-          </div>
-
-          <div className='flex gap-2'>
-            <button
-              onClick={handleSkip}
-              className='px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors'
-            >
-              Skip Tour
+        <div className='flex items-center justify-between gap-2'>
+          {isFirstStep ? (
+            <button onClick={handleSkip} className='btn-ghost -ml-3'>
+              Skip tour
             </button>
-            <button
-              onClick={handleNext}
-              className='flex items-center gap-2 px-6 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors font-medium'
-            >
-              {isLastStep ? 'Get Started' : 'Next'}
-              {!isLastStep && <ChevronRight size={16} />}
+          ) : (
+            <button onClick={prevStep} className='btn-ghost -ml-3'>
+              <ChevronLeft size={16} />
+              Back
             </button>
-          </div>
+          )}
+          <button onClick={handleNext} className='btn-primary'>
+            {isFirstStep
+              ? 'Start the tour'
+              : isLastStep
+              ? 'Finish'
+              : 'Next'}
+            {!isLastStep && <ChevronRight size={16} />}
+          </button>
         </div>
       </div>
     </div>

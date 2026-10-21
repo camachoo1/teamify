@@ -1,8 +1,8 @@
-import { Calendar, User, Sparkles, Save } from 'lucide-react';
+import { Check } from 'lucide-react';
 import { useForm } from 'react-hook-form';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import useStore from '../store/useStore';
-import clsx from 'clsx';
+import { useShallow } from 'zustand/react/shallow';
 
 interface EventForm {
   eventName: string;
@@ -10,14 +10,21 @@ interface EventForm {
 }
 
 export default function EventSettings() {
-  const { eventName, organizerName, setEventInfo } = useStore();
+  const { eventName, organizerName, setEventInfo } = useStore(
+    useShallow((state) => ({
+      eventName: state.eventName,
+      organizerName: state.organizerName,
+      setEventInfo: state.setEventInfo,
+    }))
+  );
   const [showSuccess, setShowSuccess] = useState(false);
+  const successTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   const {
     register,
     handleSubmit,
     reset,
-    formState: { isSubmitting },
+    formState: { isSubmitting, isDirty },
   } = useForm<EventForm>({
     defaultValues: {
       eventName,
@@ -33,62 +40,67 @@ export default function EventSettings() {
     });
   }, [eventName, organizerName, reset]);
 
+  useEffect(() => () => clearTimeout(successTimer.current), []);
+
   const onSubmit = (data: EventForm) => {
-    setEventInfo(data.eventName, data.organizerName);
+    setEventInfo(data.eventName.trim(), data.organizerName.trim());
     setShowSuccess(true);
 
     // Reset to normal state after 2 seconds
-    setTimeout(() => {
+    clearTimeout(successTimer.current);
+    successTimer.current = setTimeout(() => {
       setShowSuccess(false);
     }, 2000);
   };
 
   return (
-    <div className='card animate-fade-in' data-tour='event-settings'>
-      <div className='flex items-center gap-3 mb-6'>
-        <div className='p-2.5 bg-gradient-to-br from-primary/20 to-rose-500/20 rounded-xl'>
-          <Sparkles className='text-primary' size={22} />
-        </div>
-        <h2 className='text-xl font-bold'>Event Settings</h2>
-      </div>
+    <form
+      onSubmit={handleSubmit(onSubmit)}
+      data-tour='event-settings'
+      className='rounded-panel'
+    >
+      <label htmlFor='event-name' className='sr-only'>
+        Event name
+      </label>
+      <input
+        id='event-name'
+        {...register('eventName')}
+        className='w-full bg-transparent font-display text-5xl font-extrabold uppercase leading-[0.95] tracking-tight placeholder:text-muted/45 focus:outline-none sm:text-7xl'
+        placeholder='Name your event'
+        autoComplete='off'
+      />
 
-      <form onSubmit={handleSubmit(onSubmit)} className='space-y-5'>
-        <div>
-          <label className='flex items-center gap-2 text-sm font-semibold mb-2 text-gray-700 dark:text-gray-300'>
-            <Calendar size={16} />
-            Event Name
-          </label>
-          <input
-            {...register('eventName')}
-            className='input-field'
-            placeholder='Summer Tournament 2024'
-          />
-        </div>
-
-        <div>
-          <label className='flex items-center gap-2 text-sm font-semibold mb-2 text-gray-700 dark:text-gray-300'>
-            <User size={16} />
-            Organizer Name
-          </label>
-          <input
-            {...register('organizerName')}
-            className='input-field'
-            placeholder='John Doe'
-          />
-        </div>
-
-        <button
-          type='submit'
-          disabled={isSubmitting}
-          className={clsx(
-            'btn-primary w-full flex items-center justify-center gap-2 transition-all duration-300',
-            showSuccess && 'bg-green-600 hover:bg-green-700'
-          )}
+      <div className='mt-3 flex flex-wrap items-center gap-x-3 gap-y-2'>
+        <label
+          htmlFor='organizer-name'
+          className='text-muted'
         >
-          <Save size={18} />
-          {showSuccess ? 'Saved!' : 'Save Settings'}
-        </button>
-      </form>
-    </div>
+          Organized by
+        </label>
+        <input
+          id='organizer-name'
+          {...register('organizerName')}
+          className='min-w-0 flex-1 basis-48 border-b border-dashed border-line bg-transparent py-1 font-semibold placeholder:font-normal placeholder:text-muted/60 focus:border-accent focus:outline-none sm:max-w-xs'
+          placeholder='Add your name'
+          autoComplete='off'
+        />
+        {(isDirty || showSuccess) && (
+          <button
+            type='submit'
+            disabled={isSubmitting || showSuccess}
+            className='btn-secondary h-9'
+          >
+            {showSuccess ? (
+              <>
+                <Check size={16} />
+                Saved
+              </>
+            ) : (
+              'Save event'
+            )}
+          </button>
+        )}
+      </div>
+    </form>
   );
 }

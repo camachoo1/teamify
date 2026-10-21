@@ -19,44 +19,44 @@ export interface OnboardingStep extends OnboardingStepData {
 
 export const ONBOARDING_STEP_DATA: OnboardingStepData[] = [
   {
-    title: 'Welcome to Teamify!',
+    title: 'Welcome to Teamify',
     description:
-      "Create balanced teams for tournaments and events with ease. Let's get you started with a quick tour.",
+      'Teamify turns a list of players into fair teams for your event. Here is the quick tour: it takes four steps.',
     iconType: 'users',
     highlight: null,
     position: 'center',
   },
   {
-    title: '1. Set Up Your Event',
+    title: 'Name your event',
     description:
-      'Start by giving your tournament a name and adding organizer details. This helps identify your event.',
+      'Give the event a name and add who is organizing it. The name also appears on shared links.',
     iconType: 'settings',
     highlight: "[data-tour='event-settings']",
-    position: 'right',
+    position: 'bottom',
   },
   {
-    title: '2. Add Your Players',
+    title: 'Add your players',
     description:
-      'Add players one by one or import from CSV. You can set skill levels for better team balancing.',
+      'Add players one at a time or paste a whole list. Turn on skill balancing to give each player a skill level.',
     iconType: 'users',
     highlight: "[data-tour='add-players']",
     position: 'right',
   },
   {
-    title: '3. Generate Balanced Teams',
+    title: 'Make the teams',
     description:
-      "Once you have players, use the 'Randomize Teams' button to create balanced teams. Enable skill balancing for fairer matches.",
+      'Randomize builds every team for you. Switch to Manual to create teams yourself and move players between them.',
     iconType: 'trophy',
     highlight: "[data-tour='generate-teams']",
     position: 'left',
   },
   {
-    title: '4. Share & Export',
+    title: 'Share or export',
     description:
-      'Export your teams for tournament platforms like Challonge, or share them with participants using the share feature.',
+      'Send a read-only link to players, export a team list for Challonge, or save the whole setup as a file.',
     iconType: 'share',
     highlight: "[data-tour='export-share']",
-    position: 'left',
+    position: 'bottom',
   },
 ];
 
@@ -276,97 +276,7 @@ export const smoothScrollToElement = (element: HTMLElement): void => {
 };
 
 export const highlightElement = (selector: string): void => {
-  const element = document.querySelector(selector) as HTMLElement;
-  if (element) {
-    element.style.position = 'relative';
-    element.style.zIndex = '60';
-    element.style.boxShadow =
-      '0 0 0 4px rgba(59, 130, 246, 0.5), 0 0 0 8px rgba(59, 130, 246, 0.2)';
-    element.style.borderRadius = '12px';
-
-    // Special handling for header buttons
-    if (selector === "[data-tour='export-share']") {
-      element.style.setProperty(
-        'backdrop-filter',
-        'none',
-        'important'
-      );
-      element.style.setProperty(
-        '-webkit-backdrop-filter',
-        'none',
-        'important'
-      );
-      element.style.setProperty(
-        'background',
-        'rgba(255, 255, 255, 0.95)',
-        'important'
-      );
-      element.style.setProperty('border-radius', '12px', 'important');
-
-      // Create a solid background to completely block the blur behind
-      element.style.setProperty(
-        'background-color',
-        'var(--tw-bg-opacity, 1) rgb(255 255 255)',
-        'important'
-      );
-
-      const header = element.closest('header') as HTMLElement;
-      if (header) {
-        header.style.setProperty(
-          'backdrop-filter',
-          'none',
-          'important'
-        );
-        header.style.setProperty(
-          '-webkit-backdrop-filter',
-          'none',
-          'important'
-        );
-      }
-
-      const glassHeader = element.closest(
-        '.glass-header'
-      ) as HTMLElement;
-      if (glassHeader) {
-        glassHeader.style.setProperty(
-          'backdrop-filter',
-          'none',
-          'important'
-        );
-        glassHeader.style.setProperty(
-          '-webkit-backdrop-filter',
-          'none',
-          'important'
-        );
-      }
-    } else {
-      element.style.backdropFilter = 'none';
-    }
-
-    const childElements = element.querySelectorAll(
-      '*'
-    ) as NodeListOf<HTMLElement>;
-    childElements.forEach((child) => {
-      if (selector === "[data-tour='export-share']") {
-        child.style.setProperty(
-          'backdrop-filter',
-          'none',
-          'important'
-        );
-        child.style.setProperty(
-          '-webkit-backdrop-filter',
-          'none',
-          'important'
-        );
-        if (child.tagName === 'BUTTON' || child.tagName === 'SPAN') {
-          child.style.setProperty('text-shadow', 'none', 'important');
-          child.style.setProperty('filter', 'none', 'important');
-        }
-      } else {
-        child.style.backdropFilter = 'none';
-      }
-    });
-  }
+  document.querySelector(selector)?.classList.add('tour-highlight');
 };
 
 export const removeAllHighlights = (
@@ -374,57 +284,9 @@ export const removeAllHighlights = (
 ): void => {
   steps.forEach((step) => {
     if (step.highlight) {
-      const element = document.querySelector(
-        step.highlight
-      ) as HTMLElement;
-      if (element) {
-        element.style.position = '';
-        element.style.zIndex = '';
-        element.style.boxShadow = '';
-        element.style.borderRadius = '';
-
-        // Complete cleanup for header elements
-        if (step.highlight === "[data-tour='export-share']") {
-          element.style.removeProperty('backdrop-filter');
-          element.style.removeProperty('-webkit-backdrop-filter');
-          element.style.removeProperty('background');
-          element.style.removeProperty('background-color');
-
-          // Restore header blur completely
-          const header = element.closest('header') as HTMLElement;
-          if (header) {
-            header.style.removeProperty('backdrop-filter');
-            header.style.removeProperty('-webkit-backdrop-filter');
-          }
-
-          const glassHeader = element.closest(
-            '.glass-header'
-          ) as HTMLElement;
-          if (glassHeader) {
-            glassHeader.style.removeProperty('backdrop-filter');
-            glassHeader.style.removeProperty(
-              '-webkit-backdrop-filter'
-            );
-          }
-        } else {
-          element.style.backdropFilter = '';
-        }
-
-        // Complete child element cleanup
-        const childElements = element.querySelectorAll(
-          '*'
-        ) as NodeListOf<HTMLElement>;
-        childElements.forEach((child) => {
-          if (step.highlight === "[data-tour='export-share']") {
-            child.style.removeProperty('backdrop-filter');
-            child.style.removeProperty('-webkit-backdrop-filter');
-            child.style.removeProperty('text-shadow');
-            child.style.removeProperty('filter');
-          } else {
-            child.style.backdropFilter = '';
-          }
-        });
-      }
+      document
+        .querySelector(step.highlight)
+        ?.classList.remove('tour-highlight');
     }
   });
 };

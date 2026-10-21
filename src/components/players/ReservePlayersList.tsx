@@ -1,4 +1,3 @@
-import { UserCheck } from 'lucide-react';
 import PlayerRow from './PlayerRow';
 import { Player } from '../../types';
 
@@ -12,23 +11,25 @@ export default function ReservePlayersList({
   onEditPlayer,
 }: ReservePlayersListProps) {
   return (
-    <div>
-      <h3 className='font-semibold text-gray-900 dark:text-gray-100 mb-3 flex items-center gap-2'>
-        <UserCheck size={18} />
-        Reserve Players ({players.length})
+    <section aria-labelledby='reserve-players-heading'>
+      <h3
+        id='reserve-players-heading'
+        className='mb-2 flex items-baseline justify-between font-semibold'
+      >
+        On the bench
+        <span className='font-display text-2xl font-bold leading-none'>
+          {players.length}
+        </span>
       </h3>
 
-      <div className='space-y-2 max-h-60 overflow-y-auto scrollbar-custom pr-2'>
-        {players.length === 0 ? (
-          <div className='text-center py-8 text-gray-400 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg'>
-            <UserCheck
-              size={32}
-              className='mx-auto mb-2 opacity-30'
-            />
-            <p className='text-sm'>No reserve players</p>
-          </div>
-        ) : (
-          players.map((player, index) => (
+      {players.length === 0 ? (
+        <p className='rounded-2xl border border-dashed border-line px-4 py-5 text-center text-sm text-muted'>
+          No reserves. Move a player here from their row, or add new
+          players as reserves.
+        </p>
+      ) : (
+        <ol className='scrollbar-custom -mr-2 max-h-60 space-y-1 overflow-y-auto pr-2'>
+          {players.map((player, index) => (
             <PlayerRow
               key={player.id}
               player={player}
@@ -36,9 +37,9 @@ export default function ReservePlayersList({
               type='reserve'
               onEdit={onEditPlayer}
             />
-          ))
-        )}
-      </div>
-    </div>
+          ))}
+        </ol>
+      )}
+    </section>
   );
 }

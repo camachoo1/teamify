@@ -1,15 +1,14 @@
 import { useState } from 'react';
 import {
-  Users,
   Moon,
   Sun,
-  Sparkles,
   Trophy,
   FileDown,
   Share2,
   Trash2,
 } from 'lucide-react';
 import useStore from '../store/useStore';
+import { useShallow } from 'zustand/react/shallow';
 import ImportExportModal from '../modals/ImportExportModal';
 import ChallongeExportModal from '../modals/BulkExportModal';
 import ShareModal from '../modals/ShareModal';
@@ -24,7 +23,23 @@ export default function Header() {
     teams,
     players,
     clearAll,
-  } = useStore();
+    activeView,
+    setActiveView,
+    tournament,
+  } = useStore(
+    useShallow((state) => ({
+      darkMode: state.darkMode,
+      toggleDarkMode: state.toggleDarkMode,
+      eventName: state.eventName,
+      organizerName: state.organizerName,
+      teams: state.teams,
+      players: state.players,
+      clearAll: state.clearAll,
+      activeView: state.activeView,
+      setActiveView: state.setActiveView,
+      tournament: state.tournament,
+    }))
+  );
   const [showImportExport, setShowImportExport] = useState(false);
   const [showChallongeExport, setShowChallongeExport] =
     useState(false);
@@ -37,6 +52,7 @@ export default function Header() {
   };
 
   const hasDataToClear =
+    tournament !== null ||
     teams.length > 0 ||
     players.length > 0 ||
     eventName ||
@@ -44,158 +60,108 @@ export default function Header() {
 
   return (
     <>
-      <header className='glass-header sticky top-0 z-50'>
-        <div className='container mx-auto px-4 py-4'>
-          <div className='flex items-center justify-between'>
-            <div className='flex items-center gap-3'>
-              <div className='p-2.5 bg-gradient-to-br from-primary to-rose-500 rounded-xl text-white shadow-lg shadow-primary/25'>
-                <Users size={28} />
-              </div>
-              <div>
-                <h1 className='text-2xl font-bold bg-gradient-to-r from-primary to-rose-600 bg-clip-text text-transparent'>
-                  Teamify
-                </h1>
-                {eventName && (
-                  <p className='text-sm text-gray-600 dark:text-gray-400 flex items-center gap-2'>
-                    <Sparkles size={12} />
-                    {eventName}
-                    {organizerName && ` • ${organizerName}`}
-                  </p>
-                )}
-              </div>
-            </div>
-
-            {/* Action Buttons Container */}
-            <div className='flex items-center gap-2'>
-              {/* Export/Share buttons wrapper with tour attribute */}
-              <div
-                className='flex items-center gap-2'
-                data-tour='export-share'
-              >
-                {/* Challonge Export Button */}
-                <button
-                  onClick={() => setShowChallongeExport(true)}
-                  disabled={teams.length === 0}
-                  className='hidden sm:flex items-center gap-2 px-3 py-2 rounded-lg bg-gradient-to-r from-orange-500 to-red-500 text-white hover:from-orange-600 hover:to-red-600 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium shadow-sm'
-                  title={
-                    teams.length === 0
-                      ? 'Create teams first'
-                      : 'Export teams for Challonge'
-                  }
-                >
-                  <Trophy size={16} />
-                  <span className='hidden md:inline'>Challonge</span>
-                </button>
-
-                {/* Mobile Challonge Export Button */}
-                <button
-                  onClick={() => setShowChallongeExport(true)}
-                  disabled={teams.length === 0}
-                  className='sm:hidden p-2 rounded-lg bg-gradient-to-r from-orange-500 to-red-500 text-white hover:from-orange-600 hover:to-red-600 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed'
-                  title={
-                    teams.length === 0
-                      ? 'Create teams first'
-                      : 'Export for Challonge'
-                  }
-                >
-                  <Trophy size={18} />
-                </button>
-
-                {/* Import/Export Button */}
-                <button
-                  onClick={() => setShowImportExport(true)}
-                  className='hidden sm:flex items-center gap-2 px-3 py-2 rounded-lg bg-gradient-to-r from-blue-500 to-purple-500 text-white hover:from-blue-600 hover:to-purple-600 transition-all duration-200 text-sm font-medium shadow-sm'
-                  title='Import or export team configurations'
-                >
-                  <FileDown size={16} />
-                  <span className='hidden md:inline'>
-                    Import/Export
-                  </span>
-                </button>
-
-                {/* Mobile Import/Export Button */}
-                <button
-                  onClick={() => setShowImportExport(true)}
-                  className='sm:hidden p-2 rounded-lg bg-gradient-to-r from-blue-500 to-purple-500 text-white hover:from-blue-600 hover:to-purple-600 transition-all duration-200'
-                  title='Import/Export'
-                >
-                  <FileDown size={18} />
-                </button>
-
-                {/* Share Button */}
-                <button
-                  onClick={() => setShowShare(true)}
-                  disabled={teams.length === 0}
-                  className='hidden sm:flex items-center gap-2 px-3 py-2 rounded-lg bg-gradient-to-r from-green-500 to-teal-500 text-white hover:from-green-600 hover:to-teal-600 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium shadow-sm'
-                  title={
-                    teams.length === 0
-                      ? 'Create teams first'
-                      : 'Share teams'
-                  }
-                >
-                  <Share2 size={16} />
-                  <span className='hidden md:inline'>Share</span>
-                </button>
-
-                {/* Mobile Share Button */}
-                <button
-                  onClick={() => setShowShare(true)}
-                  disabled={teams.length === 0}
-                  className='sm:hidden p-2 rounded-lg bg-gradient-to-r from-green-500 to-teal-500 text-white hover:from-green-600 hover:to-teal-600 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed'
-                  title='Share'
-                >
-                  <Share2 size={18} />
-                </button>
-              </div>
-
-              {/* Clear All Button - separate from tour */}
+      <header className='sticky top-0 z-40 border-b border-line bg-paper/95'>
+        <div className='mx-auto flex min-h-16 max-w-[1400px] flex-wrap items-center justify-between gap-x-3 gap-y-2 px-4 py-3 sm:px-8'>
+          <div className='flex items-center gap-4'>
+            <a
+              href='#'
+              className='font-display text-3xl font-black uppercase leading-none tracking-tight'
+              aria-label='Teamify home'
+            >
+              Teamify
+            </a>
+            <nav
+              className='segmented'
+              aria-label='Sections'
+            >
               <button
-                onClick={() => setShowClearConfirm(true)}
-                disabled={!hasDataToClear}
-                className='hidden sm:flex items-center gap-2 px-3 py-2 rounded-lg bg-gradient-to-r from-red-500 to-red-600 text-white hover:from-red-600 hover:to-red-700 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium shadow-sm'
-                title={
-                  hasDataToClear
-                    ? 'Clear all data'
-                    : 'No data to clear'
-                }
+                type='button'
+                aria-pressed={activeView === 'teams'}
+                onClick={() => setActiveView('teams')}
               >
-                <Trash2 size={16} />
-                <span className='hidden md:inline'>Clear All</span>
+                Teams
               </button>
-
-              {/* Mobile Clear All Button */}
               <button
-                onClick={() => setShowClearConfirm(true)}
-                disabled={!hasDataToClear}
-                className='sm:hidden p-2 rounded-lg bg-gradient-to-r from-red-500 to-red-600 text-white hover:from-red-600 hover:to-red-700 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed'
-                title={
-                  hasDataToClear
-                    ? 'Clear all data'
-                    : 'No data to clear'
-                }
+                type='button'
+                aria-pressed={activeView === 'tournament'}
+                onClick={() => setActiveView('tournament')}
               >
-                <Trash2 size={18} />
-              </button>
-
-              {/* Dark Mode Toggle - separate from tour */}
-              <button
-                onClick={toggleDarkMode}
-                className='p-3 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 transition-all duration-200 group'
-                aria-label='Toggle dark mode'
-              >
-                {darkMode ? (
-                  <Sun
-                    size={22}
-                    className='group-hover:rotate-180 transition-transform duration-500'
-                  />
-                ) : (
-                  <Moon
-                    size={22}
-                    className='group-hover:-rotate-12 transition-transform duration-500'
+                Tournament
+                {tournament && (
+                  <span
+                    className='ml-1.5 inline-block h-2 w-2 rounded-full bg-accent align-middle'
+                    title='Tournament in progress'
                   />
                 )}
               </button>
+            </nav>
+          </div>
+
+          <div className='flex items-center gap-1 sm:gap-2'>
+            <div
+              className='flex items-center gap-1 sm:gap-2'
+              data-tour='export-share'
+            >
+              <button
+                onClick={() => setShowImportExport(true)}
+                className='btn-ghost px-2.5 sm:px-4'
+                title='Save this setup to a file or load one'
+                aria-label='Save or load setup'
+              >
+                <FileDown size={17} />
+                <span className='hidden md:inline'>Save or load</span>
+              </button>
+              <button
+                onClick={() => setShowChallongeExport(true)}
+                disabled={teams.length === 0}
+                className='btn-ghost px-2.5 sm:px-4'
+                title={
+                  teams.length === 0
+                    ? 'Create teams first'
+                    : 'Copy a team list for Challonge'
+                }
+                aria-label='Export for Challonge'
+              >
+                <Trophy size={17} />
+                <span className='hidden md:inline'>Challonge</span>
+              </button>
+              <button
+                onClick={() => setShowShare(true)}
+                disabled={teams.length === 0}
+                className='btn-primary px-3 sm:px-4'
+                title={
+                  teams.length === 0
+                    ? 'Create teams first'
+                    : 'Share a read-only link'
+                }
+                aria-label='Share teams'
+              >
+                <Share2 size={17} />
+                <span className='hidden sm:inline'>Share</span>
+              </button>
             </div>
+
+            <span className='mx-1 hidden h-6 w-px bg-line sm:block' />
+
+            <button
+              onClick={() => setShowClearConfirm(true)}
+              disabled={!hasDataToClear}
+              className='icon-btn hover:text-bad'
+              title={
+                hasDataToClear ? 'Clear everything' : 'Nothing to clear'
+              }
+              aria-label='Clear everything'
+            >
+              <Trash2 size={18} />
+            </button>
+            <button
+              onClick={toggleDarkMode}
+              className='icon-btn'
+              title={darkMode ? 'Use light theme' : 'Use dark theme'}
+              aria-label={darkMode ? 'Use light theme' : 'Use dark theme'}
+            >
+              {darkMode ? <Sun size={18} /> : <Moon size={18} />}
+            </button>
           </div>
         </div>
       </header>

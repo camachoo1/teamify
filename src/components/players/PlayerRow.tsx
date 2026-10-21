@@ -1,5 +1,6 @@
-import { X, Lock, Unlock, UserX, ArrowUp, Edit2 } from 'lucide-react';
+import { X, Lock, UserX, ArrowUp, Edit2 } from 'lucide-react';
 import useStore from '../../store/useStore';
+import { useShallow } from 'zustand/react/shallow';
 import clsx from 'clsx';
 import { Player } from '../../types';
 
@@ -26,7 +27,19 @@ export default function PlayerRow({
     teamSize,
     maxTeams,
     players,
-  } = useStore();
+  } = useStore(
+    useShallow((state) => ({
+      removePlayer: state.removePlayer,
+      togglePlayerLock: state.togglePlayerLock,
+      togglePlayerReserve: state.togglePlayerReserve,
+      reservePlayersEnabled: state.reservePlayersEnabled,
+      skillBalancingEnabled: state.skillBalancingEnabled,
+      skillCategories: state.skillCategories,
+      teamSize: state.teamSize,
+      maxTeams: state.maxTeams,
+      players: state.players,
+    }))
+  );
 
   // Calculate capacity for reserves
   const activePlayers = players.filter((p) => !p.isReserve);
@@ -44,110 +57,88 @@ export default function PlayerRow({
       : null;
 
   const isReserve = type === 'reserve';
-  const displayIndex = isReserve ? `R${index + 1}` : `#${index + 1}`;
+  const actionsClass =
+    'flex shrink-0 items-center transition-opacity [@media(hover:hover)]:opacity-0 group-hover:opacity-100 focus-within:opacity-100';
 
   return (
-    <div
+    <li
       className={clsx(
-        'flex items-center justify-between p-3 rounded-lg group transition-all duration-200',
-        isReserve
-          ? 'bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800'
-          : player.locked
-          ? 'bg-gradient-to-r from-primary/10 to-rose-500/10 border border-primary/20'
-          : 'bg-gray-50 dark:bg-gray-800/50 hover:bg-gray-100 dark:hover:bg-gray-800'
+        'group flex items-center gap-3 rounded-xl px-2 py-1.5 transition-colors hover:bg-sunk/70',
+        player.locked && !isReserve && 'bg-gold/15'
       )}
     >
-      <div className='flex items-center gap-3 flex-1 min-w-0'>
+      <span className='w-6 shrink-0 text-right text-sm tabular-nums text-muted'>
+        {index + 1}
+      </span>
+
+      {skillInfo && (
         <span
-          className={clsx(
-            'text-sm font-bold w-6',
-            isReserve
-              ? 'text-orange-400 dark:text-orange-500'
-              : 'text-gray-400 dark:text-gray-500'
-          )}
-        >
-          {displayIndex}
-        </span>
+          className='dot'
+          style={{ backgroundColor: skillInfo.color }}
+          title={skillInfo.name}
+        />
+      )}
 
-        {skillInfo && (
-          <div
-            className='w-3 h-3 rounded-full flex-shrink-0'
-            style={{ backgroundColor: skillInfo.color }}
-            title={skillInfo.name}
-          />
+      <span
+        className={clsx(
+          'min-w-0 flex-1 truncate',
+          player.locked && !isReserve ? 'font-semibold' : 'font-medium',
+          isReserve && 'text-muted'
         )}
+      >
+        {player.name}
+      </span>
 
-        <span
-          className={clsx(
-            'font-medium truncate',
-            isReserve
-              ? 'text-orange-900 dark:text-orange-100'
-              : player.locked && 'text-primary font-semibold'
-          )}
-        >
-          {player.name}
-        </span>
+      {player.locked && !isReserve && (
+        <Lock
+          size={14}
+          className='shrink-0 text-gold'
+          aria-label='Locked to their team'
+        />
+      )}
 
-        {isReserve ? (
-          <span className='text-xs bg-orange-200 dark:bg-orange-800 text-orange-800 dark:text-orange-200 px-2 py-0.5 rounded-full font-semibold'>
-            RESERVE
-          </span>
-        ) : (
-          player.locked && (
-            <span className='text-xs bg-primary/20 text-primary px-2 py-0.5 rounded-full font-semibold'>
-              LOCKED
-            </span>
-          )
-        )}
-      </div>
-
-      <div className='flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity'>
-        {/* Edit button - always available */}
+      <div className={actionsClass}>
         <button
           onClick={() => onEdit?.(player)}
-          className='p-1.5 rounded-lg transition-all duration-200 text-blue-600 hover:bg-blue-100 dark:hover:bg-blue-900/20'
+          className='icon-btn h-8 w-8'
           title='Edit player'
+          aria-label={`Edit ${player.name}`}
         >
           <Edit2 size={14} />
         </button>
 
         {isReserve ? (
-          // Reserve player actions
           <>
             <button
               onClick={() => togglePlayerReserve(player.id)}
               disabled={isAtCapacity}
-              className={clsx(
-                'p-1.5 rounded-lg transition-all duration-200',
-                isAtCapacity
-                  ? 'text-gray-400 cursor-not-allowed'
-                  : 'text-green-600 hover:bg-green-100 dark:hover:bg-green-900/20'
-              )}
+              className='icon-btn h-8 w-8'
               title={
                 isAtCapacity
-                  ? 'Teams are at full capacity'
-                  : 'Promote to active player'
+                  ? 'Teams are full'
+                  : 'Move into the playing list'
               }
+              aria-label={`Move ${player.name} into the playing list`}
             >
               <ArrowUp size={14} />
             </button>
             <button
               onClick={() => removePlayer(player.id)}
-              className='p-1.5 hover:bg-red-100 dark:hover:bg-red-900/20 text-red-600 
-                       rounded-lg transition-all duration-200'
+              className='icon-btn h-8 w-8 hover:text-bad'
               title='Remove player'
+              aria-label={`Remove ${player.name}`}
             >
               <X size={14} />
             </button>
           </>
         ) : (
-          // Active player actions
           <>
             {reservePlayersEnabled && (
               <button
                 onClick={() => togglePlayerReserve(player.id)}
-                className='p-1.5 rounded-lg transition-all duration-200 text-orange-600 hover:bg-orange-100 dark:hover:bg-orange-900/20'
-                title='Move to reserves'
+                className='icon-btn h-8 w-8'
+                title='Move to the bench'
+                aria-label={`Move ${player.name} to the bench`}
               >
                 <UserX size={14} />
               </button>
@@ -155,31 +146,37 @@ export default function PlayerRow({
             <button
               onClick={() => togglePlayerLock(player.id)}
               className={clsx(
-                'p-1.5 rounded-lg transition-all duration-200',
+                'icon-btn h-8 w-8',
+                player.locked && 'text-gold hover:text-gold'
+              )}
+              title={
                 player.locked
-                  ? 'bg-primary text-white hover:bg-primary-dark'
-                  : 'hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-400'
-              )}
-              title={player.locked ? 'Unlock player' : 'Lock player'}
+                  ? 'Unlock: let randomize move this player'
+                  : 'Lock: keep this player on their team'
+              }
+              aria-label={
+                player.locked
+                  ? `Unlock ${player.name}`
+                  : `Lock ${player.name}`
+              }
+              aria-pressed={player.locked}
             >
-              {player.locked ? (
-                <Lock size={14} />
-              ) : (
-                <Unlock size={14} />
-              )}
+              <Lock size={14} />
             </button>
             <button
               onClick={() => removePlayer(player.id)}
-              className='p-1.5 hover:bg-red-100 dark:hover:bg-red-900/20 text-red-600 
-                       rounded-lg transition-all duration-200 disabled:opacity-50'
+              className='icon-btn h-8 w-8 hover:text-bad'
               disabled={player.locked}
-              title='Remove player'
+              title={
+                player.locked ? 'Unlock to remove' : 'Remove player'
+              }
+              aria-label={`Remove ${player.name}`}
             >
               <X size={14} />
             </button>
           </>
         )}
       </div>
-    </div>
+    </li>
   );
 }

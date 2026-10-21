@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { X, Plus, UserCheck } from 'lucide-react';
+import { X, Plus } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import useStore from '../store/useStore';
+import { useShallow } from 'zustand/react/shallow';
 import clsx from 'clsx';
 
 interface PlayerForm {
@@ -29,13 +30,26 @@ export default function AddPlayersModal({
     skillBalancingEnabled,
     skillCategories,
     reservePlayersEnabled,
-  } = useStore();
+  } = useStore(
+    useShallow((state) => ({
+      players: state.players,
+      addPlayer: state.addPlayer,
+      skillBalancingEnabled: state.skillBalancingEnabled,
+      skillCategories: state.skillCategories,
+      reservePlayersEnabled: state.reservePlayersEnabled,
+    }))
+  );
 
   const [addMode, setAddMode] = useState<'single' | 'bulk'>('single');
   const [addAsReserve, setAddAsReserve] = useState(false);
 
-  const { register, handleSubmit, reset, watch } =
-    useForm<PlayerForm>({
+  const {
+    register,
+    handleSubmit,
+    reset,
+    watch,
+    formState: { errors },
+  } = useForm<PlayerForm>({
       defaultValues: { skillLevel: skillCategories[0]?.id || '' },
     });
 
@@ -52,9 +66,13 @@ export default function AddPlayersModal({
 
   const selectedSkillLevel = watch('skillLevel');
 
+  // The form's default category can be deleted while the modal is mounted
+  const isKnownCategory = (categoryId: string) =>
+    skillCategories.some((category) => category.id === categoryId);
+
   const onSubmit = (data: PlayerForm) => {
     if (data.playerName.trim()) {
-      if (skillBalancingEnabled && data.skillLevel) {
+      if (skillBalancingEnabled && isKnownCategory(data.skillLevel)) {
         addPlayer(
           data.playerName.trim(),
           data.skillLevel,
@@ -75,14 +93,17 @@ export default function AddPlayersModal({
       .filter((name) => name.length > 0);
 
     if (playerNames.length > 0) {
+      // Track names already added, including earlier lines of this list
+      const existingNames = new Set(
+        players.map((player) => player.name.toLowerCase())
+      );
       playerNames.forEach((name) => {
-        if (
-          !players.some(
-            (player) =>
-              player.name.toLowerCase() === name.toLowerCase()
-          )
-        ) {
-          if (skillBalancingEnabled && data.defaultSkillLevel) {
+        if (!existingNames.has(name.toLowerCase())) {
+          existingNames.add(name.toLowerCase());
+          if (
+            skillBalancingEnabled &&
+            isKnownCategory(data.defaultSkillLevel)
+          ) {
             addPlayer(name, data.defaultSkillLevel, addAsReserve);
           } else {
             addPlayer(name, undefined, addAsReserve);
@@ -127,74 +148,61 @@ export default function AddPlayersModal({
 
   return (
     <div
-      className='fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4'
+      role='dialog'
+      aria-modal='true'
+      className='modal-backdrop'
       onClick={handleBackdropClick}
     >
-      <div className='bg-white dark:bg-gray-800 rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto'>
-        <div className='flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700'>
-          <h2 className='text-xl font-bold'>Add Players</h2>
+      <div className='modal-panel max-w-2xl'>
+        <div className='modal-header'>
+          <h2 className='modal-title'>Add players</h2>
           <button
             onClick={handleClose}
-            className='p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors'
+            className='icon-btn'
+            aria-label='Close'
           >
-            <X size={20} />
+            <X size={18} />
           </button>
         </div>
 
         <div className='p-6'>
           {/* Mode Toggle */}
-          <div className='flex bg-gray-100 dark:bg-gray-700 rounded-lg p-1 mb-6'>
+          <div className='segmented mb-6' role='group' aria-label='How to add'>
             <button
+              type='button'
+              aria-pressed={addMode === 'single'}
               onClick={() => setAddMode('single')}
-              className={clsx(
-                'flex-1 py-2 px-4 rounded-md text-sm font-medium transition-all',
-                addMode === 'single'
-                  ? 'bg-white dark:bg-gray-800 shadow-sm'
-                  : 'hover:bg-gray-200 dark:hover:bg-gray-600'
-              )}
             >
-              Single Player
+              One player
             </button>
             <button
+              type='button'
+              aria-pressed={addMode === 'bulk'}
               onClick={() => setAddMode('bulk')}
-              className={clsx(
-                'flex-1 py-2 px-4 rounded-md text-sm font-medium transition-all',
-                addMode === 'bulk'
-                  ? 'bg-white dark:bg-gray-800 shadow-sm'
-                  : 'hover:bg-gray-200 dark:hover:bg-gray-600'
-              )}
             >
-              Bulk Add
+              Paste a list
             </button>
           </div>
 
           {/* Reserve Player Toggle */}
           {reservePlayersEnabled && (
-            <div className='mb-6 p-4 bg-orange-50 dark:bg-orange-900/20 rounded-lg border border-orange-200 dark:border-orange-800'>
-              <div className='flex items-center justify-between'>
-                <div className='flex items-center gap-2'>
-                  <UserCheck size={16} className='text-orange-600' />
-                  <span className='text-sm font-medium text-orange-900 dark:text-orange-100'>
-                    Add as Reserve Player
-                  </span>
-                </div>
-                <label className='relative inline-flex items-center cursor-pointer'>
-                  <input
-                    type='checkbox'
-                    checked={addAsReserve}
-                    onChange={(e) =>
-                      setAddAsReserve(e.target.checked)
-                    }
-                    className='sr-only peer'
-                  />
-                  <div className='w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-orange-300 dark:peer-focus:ring-orange-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[""] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-orange-600'></div>
-                </label>
-              </div>
-              <p className='text-xs text-orange-700 dark:text-orange-300 mt-2'>
-                Reserve players won't be assigned to teams
-                automatically and can be promoted later.
-              </p>
-            </div>
+            <label className='mb-6 flex cursor-pointer items-center gap-3 rounded-2xl border border-line p-4'>
+              <span className='flex-1'>
+                <span className='block font-semibold'>
+                  Add to the bench
+                </span>
+                <span className='subtle'>
+                  Reserves stay out of the teams until you move them in.
+                </span>
+              </span>
+              <input
+                type='checkbox'
+                checked={addAsReserve}
+                onChange={(e) => setAddAsReserve(e.target.checked)}
+                className='peer sr-only'
+              />
+              <span className="relative h-6 w-11 shrink-0 rounded-full bg-line transition-colors after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:bg-surface after:shadow-sm after:transition-transform after:content-[''] peer-checked:bg-accent peer-checked:after:translate-x-[20px] peer-focus-visible:ring-2 peer-focus-visible:ring-accent peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-surface" aria-hidden='true' />
+            </label>
           )}
 
           {addMode === 'single' ? (
@@ -203,22 +211,38 @@ export default function AddPlayersModal({
               className='space-y-4'
             >
               <div>
-                <label className='block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300'>
-                  Player Name
+                <label className='field-label'>
+                  Player name
                 </label>
                 <input
-                  {...register('playerName', { required: true })}
-                  className='input-field w-full'
-                  placeholder='Enter player name'
+                  {...register('playerName', {
+                    required: 'Please enter a player name',
+                    validate: (value) => {
+                      const name = value.trim().toLowerCase();
+                      if (!name) return 'Please enter a player name';
+                      return (
+                        !players.some(
+                          (player) => player.name.toLowerCase() === name
+                        ) || 'A player with this name already exists'
+                      );
+                    },
+                  })}
+                  className='input-field'
+                  placeholder='Full name or nickname'
                   autoFocus
                 />
+                {errors.playerName && (
+                  <p className='mt-1 text-sm text-bad'>
+                    {errors.playerName.message}
+                  </p>
+                )}
               </div>
 
               {skillBalancingEnabled &&
                 skillCategories.length > 0 && (
                   <div>
-                    <label className='block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300'>
-                      Skill Category
+                    <label className='field-label'>
+                      Skill level
                     </label>
                     <div className='grid grid-cols-2 gap-2'>
                       {skillCategories.map((category) => (
@@ -234,10 +258,10 @@ export default function AddPlayersModal({
                           />
                           <div
                             className={clsx(
-                              'p-3 rounded-lg border-2 transition-all duration-200 text-sm font-medium flex items-center gap-2',
+                              'flex items-center gap-2 rounded-xl border-2 p-3 text-sm font-semibold transition-colors',
                               selectedSkillLevel === category.id
-                                ? 'text-white border-transparent shadow-lg'
-                                : 'bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 hover:border-gray-400'
+                                ? 'border-transparent text-white'
+                                : 'border-line bg-paper/60 hover:border-muted/60'
                             )}
                             style={
                               selectedSkillLevel === category.id
@@ -246,7 +270,7 @@ export default function AddPlayersModal({
                             }
                           >
                             <div
-                              className='w-3 h-3 rounded-full flex-shrink-0'
+                              className='dot'
                               style={{
                                 backgroundColor: category.color,
                               }}
@@ -262,15 +286,15 @@ export default function AddPlayersModal({
               <div className='flex gap-3 pt-4'>
                 <button
                   type='submit'
-                  className='btn-primary flex-1 flex items-center justify-center gap-2'
+                  className='btn-primary flex-1'
                 >
                   <Plus size={16} />
-                  Add Player
+                  Add player
                 </button>
                 <button
                   type='button'
                   onClick={handleClose}
-                  className='btn-ghost px-6'
+                  className='btn-ghost'
                 >
                   Cancel
                 </button>
@@ -282,8 +306,8 @@ export default function AddPlayersModal({
               className='space-y-4'
             >
               <div>
-                <label className='block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300'>
-                  Player Names
+                <label className='field-label'>
+                  Player names
                 </label>
                 <textarea
                   {...registerBulk('playerList', {
@@ -298,16 +322,16 @@ export default function AddPlayersModal({
                       );
                     },
                   })}
-                  className='input-field w-full min-h-[150px] resize-none'
+                  className='input-field min-h-[150px] resize-y'
                   placeholder='Enter player names (one per line)&#10;John Doe&#10;Jane Smith&#10;Mike Johnson'
                   autoFocus
                 />
                 {bulkErrors.playerList && (
-                  <p className='text-red-500 text-sm mt-1'>
+                  <p className='mt-1 text-sm text-bad'>
                     {bulkErrors.playerList.message}
                   </p>
                 )}
-                <p className='text-xs text-gray-500 dark:text-gray-400 mt-2'>
+                <p className='mt-2 text-sm text-muted'>
                   Enter one player name per line. Duplicate names will
                   be skipped.
                 </p>
@@ -316,12 +340,12 @@ export default function AddPlayersModal({
               {skillBalancingEnabled &&
                 skillCategories.length > 0 && (
                   <div>
-                    <label className='block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300'>
-                      Default Skill Category
+                    <label className='field-label'>
+                      Skill level for everyone
                     </label>
                     <select
                       {...registerBulk('defaultSkillLevel')}
-                      className='input-field w-full'
+                      className='input-field'
                     >
                       {skillCategories.map((category) => (
                         <option key={category.id} value={category.id}>
@@ -329,7 +353,7 @@ export default function AddPlayersModal({
                         </option>
                       ))}
                     </select>
-                    <p className='text-xs text-gray-500 dark:text-gray-400 mt-2'>
+                    <p className='mt-2 text-sm text-muted'>
                       All players will be assigned this skill
                       category.
                     </p>
@@ -339,15 +363,15 @@ export default function AddPlayersModal({
               <div className='flex gap-3 pt-4'>
                 <button
                   type='submit'
-                  className='btn-primary flex-1 flex items-center justify-center gap-2'
+                  className='btn-primary flex-1'
                 >
                   <Plus size={16} />
-                  Add All Players
+                  Add players
                 </button>
                 <button
                   type='button'
                   onClick={handleClose}
-                  className='btn-ghost px-6'
+                  className='btn-ghost'
                 >
                   Cancel
                 </button>

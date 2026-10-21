@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { UserPlus, Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2 } from 'lucide-react';
 import useStore from '../../store/useStore';
+import { useShallow } from 'zustand/react/shallow';
 import AddPlayersModal from '../../modals/AddPlayersModal';
 import SkillSettingsModal from '../../modals/SkillSettingsModal';
 import EditPlayerModal from '../../modals/EditPlayerModal';
@@ -12,7 +13,17 @@ import ClearPlayersModal from '../../modals/ClearPlayersModal';
 import { Player } from '../../types';
 
 export default function PlayerDisplay() {
-  const { players, removePlayer, clearTeams } = useStore();
+  const {
+    players,
+    removePlayer,
+    clearTeams,
+  } = useStore(
+    useShallow((state) => ({
+      players: state.players,
+      removePlayer: state.removePlayer,
+      clearTeams: state.clearTeams,
+    }))
+  );
 
   const [showAddModal, setShowAddModal] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
@@ -40,44 +51,47 @@ export default function PlayerDisplay() {
 
   const activePlayers = players.filter((p) => !p.isReserve);
   const reservePlayers = players.filter((p) => p.isReserve);
+  const lockedCount = players.filter((p) => p.locked).length;
 
   return (
     <>
-      <div
-        className='card animate-fade-in'
-        style={{ animationDelay: '0.1s' }}
-        data-tour='add-players'
+      <section
+        className='panel'
+        aria-labelledby='players-heading'
       >
-        {/* Header */}
-        <div className='flex items-center gap-3 mb-6'>
-          <div className='p-2.5 bg-gradient-to-br from-primary/20 to-rose-500/20 rounded-xl'>
-            <UserPlus className='text-primary' size={22} />
-          </div>
+        <div className='mb-5 flex items-start gap-3'>
           <div className='flex-1'>
-            <h2 className='text-xl font-bold'>Players</h2>
-            <p className='text-sm text-gray-600 dark:text-gray-400'>
-              {players.length} total • {activePlayers.length} active •{' '}
-              {reservePlayers.length} reserves
+            <h2 id='players-heading' className='section-title'>
+              Players
+            </h2>
+            <p className='subtle mt-1'>
+              {players.length === 0
+                ? 'Your roster is empty.'
+                : `${activePlayers.length} playing${
+                    reservePlayers.length > 0
+                      ? `, ${reservePlayers.length} on the bench`
+                      : ''
+                  }${lockedCount > 0 ? `, ${lockedCount} locked` : ''}`}
             </p>
           </div>
-          <div className='flex gap-2'>
+          {players.length > 0 && (
             <button
-              onClick={() => setShowAddModal(true)}
-              className='btn-primary flex items-center gap-2 px-4'
+              onClick={() => setShowClearConfirm(true)}
+              className='icon-btn hover:text-bad'
+              title='Remove all players'
+              aria-label='Remove all players'
             >
-              <Plus size={16} />
-              Add Players
+              <Trash2 size={17} />
             </button>
-            {players.length > 0 && (
-              <button
-                onClick={() => setShowClearConfirm(true)}
-                className='p-2 rounded-lg transition-all duration-200 text-sm bg-gray-100 dark:bg-gray-800 hover:bg-red-100 dark:hover:bg-red-900/20 text-red-600'
-                title='Clear all players'
-              >
-                <Trash2 size={16} />
-              </button>
-            )}
-          </div>
+          )}
+          <button
+            onClick={() => setShowAddModal(true)}
+            className='btn-primary'
+            data-tour='add-players'
+          >
+            <Plus size={16} />
+            Add players
+          </button>
         </div>
 
         <TournamentSettings />
@@ -86,23 +100,7 @@ export default function PlayerDisplay() {
         />
         <SkillDistribution />
         <PlayerLists onEditPlayer={handleEditPlayer} />
-
-        {/* Bottom Stats */}
-        {players.length > 0 && (
-          <div className='mt-6 pt-4 border-t border-gray-200 dark:border-gray-700 flex justify-between text-sm'>
-            <div className='text-gray-600 dark:text-gray-400'>
-              <span className='font-semibold'>{players.length}</span>{' '}
-              total players
-            </div>
-            <div className='text-gray-600 dark:text-gray-400'>
-              <span className='font-semibold text-primary'>
-                {players.filter((p) => p.locked).length}
-              </span>{' '}
-              locked
-            </div>
-          </div>
-        )}
-      </div>
+      </section>
 
       {/* Modals */}
       <AddPlayersModal

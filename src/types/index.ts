@@ -1,3 +1,5 @@
+import type { Tournament, TournamentSettings } from '../tournament/types';
+
 export interface SkillCategory {
   id: string;
   name: string;
@@ -51,6 +53,8 @@ export interface AppStore {
   teamCompositionRules: { [categoryId: string]: number };
   teamNamingCategoryId: string | null;
   manualTeamMode: boolean;
+  activeView: 'teams' | 'tournament';
+  tournament: Tournament | null;
 
   // Actions
   setEventInfo: (eventName: string, organizerName: string) => void;
@@ -96,6 +100,21 @@ export interface AppStore {
   setManualMode: (enabled: boolean) => void;
   fillRemainingTeams: () => void;
   smartRandomizeTeams: () => void;
+  setActiveView: (view: 'teams' | 'tournament') => void;
+  startTournament: (
+    settings: TournamentSettings,
+    seeding: number[],
+    lowerTeamIds: number[]
+  ) => void;
+  recordMatchResult: (
+    matchId: string,
+    scoreA: number,
+    scoreB: number
+  ) => void;
+  clearMatchResult: (matchId: string) => void;
+  setGroupTieOrder: (groupId: string, teamIds: number[]) => void;
+  advanceToBracket: () => void;
+  endTournament: () => void;
 }
 
 // For when users download team data for later use

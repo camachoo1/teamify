@@ -11,14 +11,21 @@ import {
   performSkillBalancedRandomization,
   performStandardRandomization,
   applyCustomTeamNaming,
-  updatePlayerTeamAssignments,
+  syncPlayersAndTeams,
+  shuffle,
   createHistoryEntry,
   calculateOptimalTeamCount,
-  distributePlayersEvenly,
+  addPlayersToLeastFilledTeams,
   groupPlayersBySkill,
   addLockedPlayersToPartialTeams,
   distributePlayersByRulesWithDeficits,
 } from '../utils/helper';
+import {
+  createTournament,
+  recordResult,
+  clearResult,
+  startBracketStage,
+} from '../tournament/engine';
 
 // Default skill categories
 const defaultSkillCategories: SkillCategory[] = [
@@ -58,6 +65,8 @@ const useStore = create<AppStore>()(
       maxTeams: 0, // 0 means no limit
       reservePlayersEnabled: false,
       manualTeamMode: false,
+      activeView: 'teams',
+      tournament: null,
 
       // Actions
       setEventInfo: (eventName: string, organizerName: string) =>
@@ -71,17 +80,14 @@ const useStore = create<AppStore>()(
         })),
 
       togglePlayerReserve: (playerId: number) =>
-        set((state) => ({
-          players: state.players.map((p) =>
-            p.id === playerId
-              ? {
-                  ...p,
-                  isReserve: !p.isReserve,
-                  teamId: p.isReserve ? p.teamId : null,
-                }
-              : p
-          ),
-        })),
+        set((state) =>
+          syncPlayersAndTeams(
+            state.players.map((p) =>
+              p.id === playerId ? { ...p, isReserve: !p.isReserve } : p
+            ),
+            state.teams
+          )
+        ),
 
       addPlayer: (
         playerName: string,
@@ -108,37 +114,37 @@ const useStore = create<AppStore>()(
           Pick<Player, 'name' | 'skillLevel' | 'isReserve'>
         >
       ) =>
-        set((state) => ({
-          players: state.players.map((p) =>
-            p.id === playerId
-              ? {
-                  ...p,
-                  ...updates,
-                  // If changing to/from reserve, handle teamId appropriately
-                  teamId:
-                    updates.isReserve !== undefined
-                      ? updates.isReserve
-                        ? null
-                        : p.teamId
-                      : p.teamId,
-                }
-              : p
-          ),
-        })),
+        set((state) =>
+          // Syncing refreshes the player's copy in their team and
+          // removes them from it if they moved to reserves
+          syncPlayersAndTeams(
+            state.players.map((p) =>
+              p.id === playerId ? { ...p, ...updates } : p
+            ),
+            state.teams
+          )
+        ),
 
       removePlayer: (playerId: number) =>
-        set((state) => ({
-          players: state.players.filter((p) => p.id !== playerId),
-        })),
+        set((state) =>
+          syncPlayersAndTeams(
+            state.players.filter((p) => p.id !== playerId),
+            state.teams
+          )
+        ),
 
-      clearTeams: () => set({ teams: [] }),
+      clearTeams: () =>
+        set((state) => syncPlayersAndTeams(state.players, [])),
 
       togglePlayerLock: (playerId: number) =>
-        set((state) => ({
-          players: state.players.map((p) =>
-            p.id === playerId ? { ...p, locked: !p.locked } : p
-          ),
-        })),
+        set((state) =>
+          syncPlayersAndTeams(
+            state.players.map((p) =>
+              p.id === playerId ? { ...p, locked: !p.locked } : p
+            ),
+            state.teams
+          )
+        ),
 
       setManualMode: (enabled: boolean) =>
         set({ manualTeamMode: enabled }),
@@ -164,25 +170,14 @@ const useStore = create<AppStore>()(
 
       removeTeam: (teamId: number) =>
         set((state) => {
-          const teamToRemove = state.teams.find(
-            (t) => t.id === teamId
+          if (!state.teams.some((t) => t.id === teamId)) return state;
+
+          // Players on the removed team become unassigned, and players
+          // on later teams get their shifted team index
+          return syncPlayersAndTeams(
+            state.players,
+            state.teams.filter((t) => t.id !== teamId)
           );
-          if (!teamToRemove) return state;
-
-          // Unassign players from the removed team
-          const updatedPlayers = state.players.map((player) => {
-            const wasInRemovedTeam = teamToRemove.players.some(
-              (p) => p.id === player.id
-            );
-            return wasInRemovedTeam
-              ? { ...player, teamId: null }
-              : player;
-          });
-
-          return {
-            teams: state.teams.filter((t) => t.id !== teamId),
-            players: updatedPlayers,
-          };
         }),
 
       assignPlayerToTeam: (playerId: number, teamId: number) =>
@@ -192,43 +187,28 @@ const useStore = create<AppStore>()(
 
           if (!player || !targetTeam) return state;
 
-          // Remove player from current team if assigned
-          const updatedTeams = state.teams.map((t) => ({
-            ...t,
-            players: t.players.filter((p) => p.id !== playerId),
-          }));
+          // Remove player from current team if assigned, then add to new team
+          const updatedTeams = state.teams.map((t) => {
+            const players = t.players.filter((p) => p.id !== playerId);
+            return {
+              ...t,
+              players: t.id === teamId ? [...players, player] : players,
+            };
+          });
 
-          // Add player to new team
-          const targetTeamIndex = state.teams.findIndex(
-            (t) => t.id === teamId
-          );
-          if (targetTeamIndex !== -1) {
-            updatedTeams[targetTeamIndex].players.push({
-              ...player,
-              teamId: targetTeamIndex,
-            });
-          }
-
-          return {
-            teams: updatedTeams,
-            players: state.players.map((p) =>
-              p.id === playerId
-                ? { ...p, teamId: targetTeamIndex }
-                : p
-            ),
-          };
+          return syncPlayersAndTeams(state.players, updatedTeams);
         }),
 
       removePlayerFromTeam: (playerId: number) =>
-        set((state) => ({
-          teams: state.teams.map((team) => ({
-            ...team,
-            players: team.players.filter((p) => p.id !== playerId),
-          })),
-          players: state.players.map((p) =>
-            p.id === playerId ? { ...p, teamId: null } : p
-          ),
-        })),
+        set((state) =>
+          syncPlayersAndTeams(
+            state.players,
+            state.teams.map((team) => ({
+              ...team,
+              players: team.players.filter((p) => p.id !== playerId),
+            }))
+          )
+        ),
 
       addSkillCategory: (name: string, color: string) =>
         set((state) => ({
@@ -237,7 +217,7 @@ const useStore = create<AppStore>()(
             {
               id: `skill_${Date.now()}_${Math.random()
                 .toString(36)
-                .substr(2, 9)}`,
+                .slice(2, 11)}`,
               name,
               color,
             },
@@ -249,18 +229,30 @@ const useStore = create<AppStore>()(
           // Don't remove if it's the last category
           if (state.skillCategories.length <= 1) return state;
 
+          // Drop any composition rule that referenced this category
+          const remainingRules = { ...state.teamCompositionRules };
+          delete remainingRules[categoryId];
+
           return {
             skillCategories: state.skillCategories.filter(
               (cat) => cat.id !== categoryId
             ),
+            teamCompositionRules: remainingRules,
+            teamNamingCategoryId:
+              state.teamNamingCategoryId === categoryId
+                ? null
+                : state.teamNamingCategoryId,
             // Remove skill level from players who had this category
-            players: state.players.map((player) => ({
-              ...player,
-              skillLevel:
-                player.skillLevel === categoryId
-                  ? undefined
-                  : player.skillLevel,
-            })),
+            ...syncPlayersAndTeams(
+              state.players.map((player) => ({
+                ...player,
+                skillLevel:
+                  player.skillLevel === categoryId
+                    ? undefined
+                    : player.skillLevel,
+              })),
+              state.teams
+            ),
           };
         }),
 
@@ -276,7 +268,6 @@ const useStore = create<AppStore>()(
 
       randomizeTeams: () => {
         const state = get();
-        if (state.players.length === 0) return;
 
         // Filter out reserve players from team assignment
         const activePlayers = state.players.filter(
@@ -285,23 +276,11 @@ const useStore = create<AppStore>()(
         if (activePlayers.length === 0) return;
 
         let newTeams: Team[] = [];
-        let numTeams: number;
-
-        // Calculate number of teams based on maxTeams setting
-        if (state.maxTeams > 0) {
-          numTeams = state.maxTeams;
-          const minTeamsNeeded = Math.ceil(
-            activePlayers.length / state.teamSize
-          );
-          if (numTeams > minTeamsNeeded) {
-            console.warn(
-              `Reducing teams from ${numTeams} to ${minTeamsNeeded} based on player count`
-            );
-            numTeams = minTeamsNeeded;
-          }
-        } else {
-          numTeams = Math.ceil(activePlayers.length / state.teamSize);
-        }
+        const numTeams = calculateOptimalTeamCount(
+          activePlayers.length,
+          state.teamSize,
+          state.maxTeams
+        );
 
         if (
           state.skillBalancingEnabled &&
@@ -328,40 +307,37 @@ const useStore = create<AppStore>()(
         );
 
         // Update player team assignments
-        const updatedPlayers = updatePlayerTeamAssignments(
-          state.players,
-          newTeams
-        );
+        const synced = syncPlayersAndTeams(state.players, newTeams);
 
         // Create and save history entry
         const historyEntry = createHistoryEntry(
-          updatedPlayers,
-          newTeams,
-          state.eventName,
-          state.organizerName
+          synced.players,
+          synced.teams,
+          state
         );
 
         // Update state
         set({
-          teams: newTeams,
-          players: updatedPlayers,
+          ...synced,
           history: [historyEntry, ...state.history].slice(0, 10),
         });
       },
 
       fillRemainingTeams: () => {
         const state = get();
-        if (state.players.length === 0) return;
+
+        // Start from synced data so team indexes and rosters are current
+        const current = syncPlayersAndTeams(state.players, state.teams);
 
         // Get only unassigned active players
-        const unassignedPlayers = state.players.filter(
+        const unassignedPlayers = current.players.filter(
           (p) => !p.isReserve && p.teamId === null
         );
 
         if (unassignedPlayers.length === 0) return;
 
         // Get all active players (assigned + unassigned) to calculate total team needs
-        const allActivePlayers = state.players.filter(
+        const allActivePlayers = current.players.filter(
           (p) => !p.isReserve
         );
 
@@ -373,10 +349,11 @@ const useStore = create<AppStore>()(
         );
 
         // Start with existing teams (deep copy)
-        let updatedTeams = state.teams.map((team) => ({
+        let updatedTeams = current.teams.map((team) => ({
           ...team,
           players: [...team.players],
         }));
+        const existingTeamCount = updatedTeams.length;
 
         // Create additional teams if needed to reach optimal count
         while (updatedTeams.length < optimalTeamCount) {
@@ -388,7 +365,9 @@ const useStore = create<AppStore>()(
           updatedTeams.push(newTeam);
         }
 
-        // Apply skill balancing or simple distribution to unassigned players only
+        // Apply skill balancing or simple distribution to unassigned players only.
+        // Teams fill up to the team size first; if every team is full, the
+        // rest are spread evenly over the teams, as a full randomize does.
         if (
           state.skillBalancingEnabled &&
           state.skillCategories.length > 0
@@ -409,11 +388,14 @@ const useStore = create<AppStore>()(
               updatedTeams,
               rules,
               skillGroups,
-              state
+              { ...current, teamSize: state.teamSize }
             );
           } else {
-            // Simple even distribution by skill
-            distributePlayersEvenly(updatedTeams, skillGroups);
+            // Even distribution by skill
+            addPlayersToLeastFilledTeams(
+              updatedTeams,
+              Object.values(skillGroups).flat()
+            );
           }
 
           // Handle locked unassigned players
@@ -427,63 +409,34 @@ const useStore = create<AppStore>()(
           );
         } else {
           // Simple random distribution
-          const shuffledUnassigned = [...unassignedPlayers].sort(
-            () => Math.random() - 0.5
+          addPlayersToLeastFilledTeams(
+            updatedTeams,
+            shuffle(unassignedPlayers)
           );
-
-          shuffledUnassigned.forEach((player) => {
-            // Find team with most available space
-            const targetTeamIndex = updatedTeams.reduce(
-              (bestIndex, team, currentIndex) => {
-                const bestSpace =
-                  state.teamSize -
-                  updatedTeams[bestIndex].players.length;
-                const currentSpace =
-                  state.teamSize - team.players.length;
-                return currentSpace > bestSpace
-                  ? currentIndex
-                  : bestIndex;
-              },
-              0
-            );
-
-            // Only add if team has space
-            if (
-              updatedTeams[targetTeamIndex].players.length <
-              state.teamSize
-            ) {
-              updatedTeams[targetTeamIndex].players.push({
-                ...player,
-                teamId: targetTeamIndex,
-              });
-            }
-          });
         }
 
-        // Apply custom team naming
+        // Apply custom team naming to new teams and teams that still
+        // have a default name, so names typed by the user are kept
         updatedTeams = applyCustomTeamNaming(
           updatedTeams,
           state.teamNamingCategoryId,
-          state.players
+          current.players,
+          (team, index) =>
+            index >= existingTeamCount || /^Team \d+$/.test(team.name)
         );
 
         // Update player team assignments
-        const updatedPlayers = updatePlayerTeamAssignments(
-          state.players,
-          updatedTeams
-        );
+        const synced = syncPlayersAndTeams(current.players, updatedTeams);
 
         // Create history entry
         const historyEntry = createHistoryEntry(
-          updatedPlayers,
-          updatedTeams,
-          state.eventName,
-          state.organizerName
+          synced.players,
+          synced.teams,
+          state
         );
 
         set({
-          teams: updatedTeams,
-          players: updatedPlayers,
+          ...synced,
           history: [historyEntry, ...state.history].slice(0, 10),
         });
       },
@@ -508,26 +461,25 @@ const useStore = create<AppStore>()(
       movePlayerToTeam: (playerId: number, newTeamIndex: number) =>
         set((state) => {
           const player = state.players.find((p) => p.id === playerId);
-          if (!player || player.locked) return state;
-
-          const updatedTeams = state.teams.map((team) => ({
-            ...team,
-            players: team.players.filter((p) => p.id !== playerId),
-          }));
-
-          if (newTeamIndex < updatedTeams.length) {
-            updatedTeams[newTeamIndex].players.push({
-              ...player,
-              teamId: newTeamIndex,
-            });
+          if (
+            !player ||
+            player.locked ||
+            newTeamIndex < 0 ||
+            newTeamIndex >= state.teams.length
+          ) {
+            return state;
           }
 
-          return {
-            teams: updatedTeams,
-            players: state.players.map((p) =>
-              p.id === playerId ? { ...p, teamId: newTeamIndex } : p
-            ),
-          };
+          const updatedTeams = state.teams.map((team, index) => {
+            const players = team.players.filter((p) => p.id !== playerId);
+            return {
+              ...team,
+              players:
+                index === newTeamIndex ? [...players, player] : players,
+            };
+          });
+
+          return syncPlayersAndTeams(state.players, updatedTeams);
         }),
 
       loadHistoryEntry: (historyId: number) => {
@@ -548,12 +500,17 @@ const useStore = create<AppStore>()(
           }
 
           set({
-            players: playersToRestore,
-            teams: JSON.parse(JSON.stringify(entry.teams)), // Deep clone
+            ...syncPlayersAndTeams(
+              playersToRestore,
+              JSON.parse(JSON.stringify(entry.teams)) // Deep clone
+            ),
             eventName: entry.eventName,
             organizerName: entry.organizerName,
             ...(entry.maxTeams !== undefined && {
               maxTeams: entry.maxTeams,
+            }),
+            ...(entry.teamSize !== undefined && {
+              teamSize: entry.teamSize,
             }),
             ...(entry.reservePlayersEnabled !== undefined && {
               reservePlayersEnabled: entry.reservePlayersEnabled,
@@ -567,6 +524,9 @@ const useStore = create<AppStore>()(
             ...(entry.teamCompositionRules && {
               teamCompositionRules: entry.teamCompositionRules,
             }),
+            ...(entry.teamNamingCategoryId !== undefined && {
+              teamNamingCategoryId: entry.teamNamingCategoryId,
+            }),
           });
         }
       },
@@ -577,7 +537,8 @@ const useStore = create<AppStore>()(
           organizerName: '',
           players: [],
           teams: [],
-          teamSize: 2,
+          teamSize: 1,
+          tournament: null,
         }),
 
       clearHistory: () => set({ history: [] }),
@@ -616,16 +577,29 @@ const useStore = create<AppStore>()(
           if (
             !data.version ||
             !Array.isArray(data.players) ||
-            !Array.isArray(data.teams)
+            !Array.isArray(data.teams) ||
+            !data.players.every(
+              (p) =>
+                typeof p?.id === 'number' && typeof p?.name === 'string'
+            ) ||
+            !data.teams.every(
+              (t) =>
+                typeof t?.name === 'string' && Array.isArray(t?.players)
+            )
           ) {
             return false;
           }
 
+          const players: Player[] = data.players.map((p) => ({
+            ...p,
+            locked: Boolean(p.locked),
+            teamId: null,
+          }));
+
           set({
             eventName: data.eventName || '',
             organizerName: data.organizerName || '',
-            players: data.players || [],
-            teams: data.teams || [],
+            ...syncPlayersAndTeams(players, data.teams),
             teamSize: data.teamSize || 1,
           });
 
@@ -635,12 +609,90 @@ const useStore = create<AppStore>()(
           return false;
         }
       },
+      setActiveView: (view) => set({ activeView: view }),
+
+      startTournament: (settings, seeding, lowerTeamIds) =>
+        set((state) => {
+          // The tournament keeps its own copy of the teams, so later
+          // edits on the Teams tab don't change a tournament in progress
+          const teams = state.teams.map((team) => ({
+            id: team.id,
+            name: team.name,
+            players: team.players.map((p) => p.name),
+          }));
+          return {
+            tournament: createTournament(
+              settings,
+              teams,
+              seeding,
+              lowerTeamIds
+            ),
+          };
+        }),
+
+      recordMatchResult: (matchId, scoreA, scoreB) =>
+        set((state) =>
+          state.tournament
+            ? {
+                tournament: recordResult(
+                  state.tournament,
+                  matchId,
+                  scoreA,
+                  scoreB
+                ),
+              }
+            : state
+        ),
+
+      clearMatchResult: (matchId) =>
+        set((state) =>
+          state.tournament
+            ? { tournament: clearResult(state.tournament, matchId) }
+            : state
+        ),
+
+      setGroupTieOrder: (groupId, teamIds) =>
+        set((state) =>
+          state.tournament
+            ? {
+                tournament: {
+                  ...state.tournament,
+                  tieOrder: {
+                    ...state.tournament.tieOrder,
+                    [groupId]: teamIds,
+                  },
+                },
+              }
+            : state
+        ),
+
+      advanceToBracket: () =>
+        set((state) =>
+          state.tournament && state.tournament.phase === 'groups'
+            ? { tournament: startBracketStage(state.tournament) }
+            : state
+        ),
+
+      endTournament: () => set({ tournament: null }),
+
       updateTeamCompositionRules: (rules: {
         [categoryId: string]: number;
       }) => set({ teamCompositionRules: rules }),
     }),
     {
       name: 'teamify-storage',
+      // Repair rosters saved by older versions, where team copies of
+      // players could be stale and teamIds could point at the wrong team
+      merge: (persistedState, currentState) => {
+        const merged = {
+          ...currentState,
+          ...(persistedState as Partial<AppStore>),
+        };
+        return {
+          ...merged,
+          ...syncPlayersAndTeams(merged.players, merged.teams),
+        };
+      },
       onRehydrateStorage: () => (state) => {
         if (state?.darkMode) {
           document.documentElement.classList.add('dark');

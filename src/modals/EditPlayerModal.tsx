@@ -1,7 +1,8 @@
 import { useCallback, useEffect } from 'react';
-import { X, Save, Award, UserCheck } from 'lucide-react';
+import { X, Save } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import useStore from '../store/useStore';
+import { useShallow } from 'zustand/react/shallow';
 import clsx from 'clsx';
 import { Player } from '../types';
 
@@ -30,7 +31,17 @@ export default function EditPlayerModal({
     players,
     teamSize,
     maxTeams,
-  } = useStore();
+  } = useStore(
+    useShallow((state) => ({
+      updatePlayer: state.updatePlayer,
+      skillBalancingEnabled: state.skillBalancingEnabled,
+      skillCategories: state.skillCategories,
+      reservePlayersEnabled: state.reservePlayersEnabled,
+      players: state.players,
+      teamSize: state.teamSize,
+      maxTeams: state.maxTeams,
+    }))
+  );
 
   const { register, handleSubmit, reset, watch } =
     useForm<EditPlayerForm>({
@@ -68,25 +79,18 @@ export default function EditPlayerModal({
 
   const onSubmit = (data: EditPlayerForm) => {
     if (player && data.playerName.trim()) {
-      // Check capacity before allowing reserve to active promotion
-      if (
-        player.isReserve &&
-        !data.isReserve &&
-        wouldExceedCapacity
-      ) {
-        alert(
-          'Cannot promote player: Teams are at full capacity. Remove an active player first.'
-        );
-        return;
-      }
+      // Promotion past capacity is blocked; the form shows why
+      if (wouldExceedCapacity) return;
 
+      // Fields whose controls are hidden keep the player's current value
       updatePlayer(player.id, {
         name: data.playerName.trim(),
-        skillLevel:
-          skillBalancingEnabled && data.skillLevel
-            ? data.skillLevel
-            : undefined,
-        isReserve: reservePlayersEnabled ? data.isReserve : false,
+        skillLevel: skillBalancingEnabled
+          ? data.skillLevel || undefined
+          : player.skillLevel,
+        isReserve: reservePlayersEnabled
+          ? data.isReserve
+          : player.isReserve,
       });
       onClose();
     }
@@ -123,17 +127,20 @@ export default function EditPlayerModal({
 
   return (
     <div
-      className='fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4'
+      role='dialog'
+      aria-modal='true'
+      className='modal-backdrop'
       onClick={handleBackdropClick}
     >
-      <div className='bg-white dark:bg-gray-800 rounded-xl max-w-md w-full max-h-[90vh] overflow-y-auto'>
-        <div className='flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700'>
-          <h2 className='text-xl font-bold'>Edit Player</h2>
+      <div className='modal-panel max-w-md'>
+        <div className='modal-header'>
+          <h2 className='modal-title'>Edit player</h2>
           <button
             onClick={handleClose}
-            className='p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors'
+            className='icon-btn'
+            aria-label='Close'
           >
-            <X size={20} />
+            <X size={18} />
           </button>
         </div>
 
@@ -143,12 +150,12 @@ export default function EditPlayerModal({
         >
           {/* Player Name */}
           <div>
-            <label className='block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300'>
-              Player Name
+            <label className='field-label'>
+              Player name
             </label>
             <input
               {...register('playerName', { required: true })}
-              className='input-field w-full'
+              className='input-field'
               placeholder='Enter player name'
               autoFocus
             />
@@ -157,9 +164,8 @@ export default function EditPlayerModal({
           {/* Skill Category */}
           {skillBalancingEnabled && skillCategories.length > 0 && (
             <div>
-              <label className='block text-sm font-medium mb-3 text-gray-700 dark:text-gray-300'>
-                <Award size={16} className='inline mr-1' />
-                Skill Category
+              <label className='field-label'>
+                Skill level
               </label>
               <div className='space-y-2'>
                 {/* No Skill Level Option */}
@@ -172,13 +178,13 @@ export default function EditPlayerModal({
                   />
                   <div
                     className={clsx(
-                      'p-3 rounded-lg border-2 transition-all duration-200 text-sm font-medium',
+                      'rounded-xl border-2 p-3 text-sm font-semibold transition-colors',
                       selectedSkillLevel === ''
-                        ? 'bg-gray-200 dark:bg-gray-700 border-gray-400 dark:border-gray-500'
-                        : 'bg-gray-50 dark:bg-gray-800 border-gray-300 dark:border-gray-600 hover:border-gray-400'
+                        ? 'border-ink bg-sunk'
+                        : 'border-line bg-paper/60 hover:border-muted/60'
                     )}
                   >
-                    No skill category
+                    No skill level
                   </div>
                 </label>
 
@@ -197,10 +203,10 @@ export default function EditPlayerModal({
                       />
                       <div
                         className={clsx(
-                          'p-3 rounded-lg border-2 transition-all duration-200 text-sm font-medium flex items-center gap-2',
+                          'flex items-center gap-2 rounded-xl border-2 p-3 text-sm font-semibold transition-colors',
                           selectedSkillLevel === category.id
-                            ? 'text-white border-transparent shadow-lg'
-                            : 'bg-gray-50 dark:bg-gray-800 border-gray-300 dark:border-gray-600 hover:border-gray-400'
+                            ? 'border-transparent text-white'
+                            : 'border-line bg-paper/60 hover:border-muted/60'
                         )}
                         style={
                           selectedSkillLevel === category.id
@@ -209,7 +215,7 @@ export default function EditPlayerModal({
                         }
                       >
                         <div
-                          className='w-3 h-3 rounded-full flex-shrink-0'
+                          className='dot'
                           style={{ backgroundColor: category.color }}
                         />
                         <span>{category.name}</span>
@@ -223,40 +229,27 @@ export default function EditPlayerModal({
 
           {/* Reserve Status */}
           {reservePlayersEnabled && (
-            <div className='p-4 bg-orange-50 dark:bg-orange-900/20 rounded-lg border border-orange-200 dark:border-orange-800'>
-              <div className='flex items-center justify-between'>
-                <div className='flex items-center gap-2'>
-                  <UserCheck size={16} className='text-orange-600' />
-                  <span className='text-sm font-medium text-orange-900 dark:text-orange-100'>
-                    Reserve Player
+            <div>
+              <label className='flex cursor-pointer items-center gap-3 rounded-2xl border border-line p-4'>
+                <span className='flex-1'>
+                  <span className='block font-semibold'>On the bench</span>
+                  <span className='subtle'>
+                    Reserves stay out of the teams.
                   </span>
-                </div>
-                <label className='relative inline-flex items-center cursor-pointer'>
-                  <input
-                    {...register('isReserve')}
-                    type='checkbox'
-                    className='sr-only peer'
-                    disabled={wouldExceedCapacity}
-                  />
-                  <div
-                    className={clsx(
-                      'w-11 h-6 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[""] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600',
-                      wouldExceedCapacity
-                        ? 'bg-gray-300 cursor-not-allowed'
-                        : 'bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-orange-300 dark:peer-focus:ring-orange-800 peer-checked:bg-orange-600'
-                    )}
-                  />
-                </label>
-              </div>
-              <p className='text-xs text-orange-700 dark:text-orange-300 mt-2'>
-                Reserve players won't be assigned to teams
-                automatically.
-              </p>
+                </span>
+                <input
+                  {...register('isReserve')}
+                  type='checkbox'
+                  className='peer sr-only'
+                />
+                <span className="relative h-6 w-11 shrink-0 rounded-full bg-line transition-colors after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:bg-surface after:shadow-sm after:transition-transform after:content-[''] peer-checked:bg-accent peer-checked:after:translate-x-[20px] peer-focus-visible:ring-2 peer-focus-visible:ring-accent peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-surface" aria-hidden='true' />
+              </label>
               {wouldExceedCapacity && (
-                <div className='mt-2 p-2 bg-red-100 dark:bg-red-900/20 rounded text-xs text-red-700 dark:text-red-300'>
-                  ⚠️ Cannot promote: Teams are at full capacity (
-                  {currentCapacity}/{maxActiveSlots} slots used)
-                </div>
+                <p className='notice-bad mt-2'>
+                  Teams are full ({currentCapacity} of {maxActiveSlots}{' '}
+                  spots used). Keep this player on the bench, or remove
+                  someone from the playing list first.
+                </p>
               )}
             </div>
           )}
@@ -265,15 +258,16 @@ export default function EditPlayerModal({
           <div className='flex gap-3 pt-4'>
             <button
               type='submit'
-              className='btn-primary flex-1 flex items-center justify-center gap-2'
+              disabled={wouldExceedCapacity}
+              className='btn-primary flex-1'
             >
               <Save size={16} />
-              Save Changes
+              Save changes
             </button>
             <button
               type='button'
               onClick={handleClose}
-              className='btn-ghost px-6'
+              className='btn-ghost'
             >
               Cancel
             </button>

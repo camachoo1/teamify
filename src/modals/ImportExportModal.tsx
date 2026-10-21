@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect } from 'react';
 import {
   Download,
-  FileDown,
   CheckCircle,
   XCircle,
   FileText,
@@ -9,6 +8,7 @@ import {
 } from 'lucide-react';
 import { useDropzone } from 'react-dropzone';
 import useStore from '../store/useStore';
+import { useShallow } from 'zustand/react/shallow';
 import clsx from 'clsx';
 
 interface ImportExportModalProps {
@@ -25,10 +25,18 @@ export default function ImportExportModal({
     exportConfiguration,
     importConfiguration,
     teams,
-  } = useStore();
+  } = useStore(
+    useShallow((state) => ({
+      eventName: state.eventName,
+      exportConfiguration: state.exportConfiguration,
+      importConfiguration: state.importConfiguration,
+      teams: state.teams,
+    }))
+  );
   const [status, setStatus] = React.useState<
     'idle' | 'success' | 'error'
   >('idle');
+  const [exported, setExported] = React.useState(false);
 
   const handleExport = () => {
     const jsonData = exportConfiguration();
@@ -47,8 +55,8 @@ export default function ImportExportModal({
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
 
-    setStatus('success');
-    setTimeout(() => setStatus('idle'), 3000);
+    setExported(true);
+    setTimeout(() => setExported(false), 3000);
   };
 
   const onDrop = useCallback(
@@ -113,147 +121,106 @@ export default function ImportExportModal({
 
   return (
     <div
-      className='fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4'
+      role='dialog'
+      aria-modal='true'
+      className='modal-backdrop'
       onClick={handleBackdropClick}
     >
-      <div className='bg-white dark:bg-gray-800 rounded-xl max-w-lg w-full max-h-[90vh] overflow-y-auto'>
-        <div className='flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700'>
-          <div className='flex items-center gap-3'>
-            <div className='p-2.5 bg-gradient-to-br from-primary/20 to-rose-500/20 rounded-xl'>
-              <FileDown className='text-primary' size={22} />
-            </div>
-            <h2 className='text-xl font-bold'>Import / Export</h2>
-          </div>
+      <div className='modal-panel max-w-lg'>
+        <div className='modal-header'>
+          <h2 className='modal-title'>Save or load</h2>
           <button
             onClick={handleClose}
-            className='p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors'
+            className='icon-btn'
+            aria-label='Close'
           >
-            <X size={20} />
+            <X size={18} />
           </button>
         </div>
 
-        <div className='p-6 space-y-6'>
+        <div className='divide-y divide-line'>
           {/* Export Section */}
-          <div>
-            <h3 className='font-semibold text-gray-900 dark:text-gray-100 mb-2'>
-              Export Configuration
+          <section className='p-6'>
+            <h3 className='font-display text-2xl font-bold'>
+              Save to a file
             </h3>
-            <p className='text-sm text-gray-600 dark:text-gray-400 mb-4'>
-              Download your current team configuration to save it for
-              later use.
+            <p className='subtle mb-4 mt-1'>
+              Download your event, players and teams as a file you can
+              load again later.
             </p>
             <button
               onClick={handleExport}
               disabled={teams.length === 0}
-              className={clsx(
-                'btn-primary w-full flex items-center justify-center gap-2',
-                status === 'success' &&
-                  teams.length > 0 &&
-                  'bg-green-600 hover:bg-green-700'
-              )}
+              className='btn-primary'
             >
-              {status === 'success' && teams.length > 0 ? (
+              {exported ? (
                 <>
-                  <CheckCircle size={18} />
-                  Downloaded!
+                  <CheckCircle size={16} />
+                  Downloaded
                 </>
               ) : (
                 <>
-                  <Download size={18} />
-                  Export Teams
+                  <Download size={16} />
+                  Download file
                 </>
               )}
             </button>
             {teams.length === 0 && (
-              <p className='text-xs text-gray-500 mt-2 text-center'>
-                Create teams first to enable export
-              </p>
+              <p className='subtle mt-2'>Make teams first to save them.</p>
             )}
-          </div>
-
-          <div className='relative'>
-            <div className='absolute inset-0 flex items-center'>
-              <div className='w-full border-t border-gray-300 dark:border-gray-700' />
-            </div>
-            <div className='relative flex justify-center text-sm'>
-              <span className='px-3 bg-white dark:bg-gray-800 text-gray-500'>
-                or
-              </span>
-            </div>
-          </div>
+          </section>
 
           {/* Import Section with Dropzone */}
-          <div>
-            <h3 className='font-semibold text-gray-900 dark:text-gray-100 mb-2'>
-              Import Configuration
+          <section className='p-6'>
+            <h3 className='font-display text-2xl font-bold'>
+              Load a file
             </h3>
-            <p className='text-sm text-gray-600 dark:text-gray-400 mb-4'>
-              Load a previously saved team configuration from a JSON
-              file.
+            <p className='subtle mb-4 mt-1'>
+              Loading replaces your current event, players and teams.
             </p>
             <div
               {...getRootProps()}
               className={clsx(
-                'border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all duration-200',
-                isDragActive
-                  ? 'border-primary bg-primary/5 scale-[1.02]'
-                  : 'border-gray-300 dark:border-gray-600 hover:border-primary hover:bg-gray-50 dark:hover:bg-gray-800/50',
-                status === 'success' &&
-                  'border-green-500 bg-green-50 dark:bg-green-900/20',
-                status === 'error' &&
-                  'border-red-500 bg-red-50 dark:bg-red-900/20'
+                'cursor-pointer rounded-2xl border-2 border-dashed p-8 text-center transition-colors',
+                status === 'success'
+                  ? 'border-ok bg-ok/10'
+                  : status === 'error'
+                  ? 'border-bad bg-bad/10'
+                  : isDragActive
+                  ? 'border-accent bg-accent/5'
+                  : 'border-line hover:border-muted/60 hover:bg-sunk/50'
               )}
             >
               <input {...getInputProps()} />
-              <div className='flex flex-col items-center gap-3'>
-                {status === 'success' ? (
-                  <>
-                    <CheckCircle
-                      size={40}
-                      className='text-green-500'
-                    />
-                    <p className='font-medium text-green-700 dark:text-green-300'>
-                      Imported Successfully!
-                    </p>
-                    <p className='text-sm text-green-600 dark:text-green-400'>
-                      Your configuration has been loaded
-                    </p>
-                  </>
-                ) : status === 'error' ? (
-                  <>
-                    <XCircle size={40} className='text-red-500' />
-                    <p className='font-medium text-red-700 dark:text-red-300'>
-                      Import Failed
-                    </p>
-                    <p className='text-sm text-red-600 dark:text-red-400'>
-                      Please check your file and try again
-                    </p>
-                  </>
-                ) : (
-                  <>
-                    <FileText size={40} className='text-gray-400' />
-                    <div>
-                      <p className='font-medium text-gray-700 dark:text-gray-300'>
-                        {isDragActive
-                          ? 'Drop the file here'
-                          : 'Drop file or click to browse'}
-                      </p>
-                      <p className='text-sm text-gray-500 mt-1'>
-                        JSON files only
-                      </p>
-                    </div>
-                  </>
-                )}
-              </div>
+              {status === 'success' ? (
+                <>
+                  <CheckCircle size={32} className='mx-auto text-ok' />
+                  <p className='mt-2 font-semibold'>Loaded</p>
+                  <p className='subtle'>Your saved setup is back.</p>
+                </>
+              ) : status === 'error' ? (
+                <>
+                  <XCircle size={32} className='mx-auto text-bad' />
+                  <p className='mt-2 font-semibold'>
+                    That file couldn't be loaded
+                  </p>
+                  <p className='subtle'>
+                    Choose a .json file saved from Teamify.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <FileText size={32} className='mx-auto text-muted' />
+                  <p className='mt-2 font-semibold'>
+                    {isDragActive
+                      ? 'Drop the file to load it'
+                      : 'Drop a file here, or click to choose one'}
+                  </p>
+                  <p className='subtle'>Teamify .json files</p>
+                </>
+              )}
             </div>
-          </div>
-
-          {/* Close Button */}
-          <div className='flex justify-end pt-4 border-t border-gray-200 dark:border-gray-700'>
-            <button onClick={handleClose} className='btn-ghost px-6'>
-              Close
-            </button>
-          </div>
+          </section>
         </div>
       </div>
     </div>

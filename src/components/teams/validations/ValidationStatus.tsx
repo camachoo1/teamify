@@ -14,23 +14,18 @@ export const ValidationStatus = ({
   if (violations.length === 0) return null;
 
   return (
-    <div className={clsx('relative', className)}>
-      <div
-        className={clsx(
-          'w-3 h-3 rounded-full transition-all duration-200',
-          isValid
-            ? 'bg-green-500 shadow-green-500/30 shadow-lg'
-            : 'bg-red-500 animate-pulse shadow-red-500/30 shadow-lg'
-        )}
-        title={
-          isValid
-            ? 'Team composition is valid'
-            : violations.join(', ')
-        }
-      />
-      {!isValid && (
-        <div className='absolute -top-1 -right-1 w-2 h-2 bg-red-600 rounded-full animate-ping' />
+    <span
+      className={clsx(
+        'inline-flex items-center gap-1 text-xs font-semibold',
+        isValid ? 'text-ok' : 'text-bad',
+        className
       )}
-    </div>
+      title={isValid ? 'Team composition is valid' : violations.join(', ')}
+    >
+      <span
+        className={clsx('dot h-2 w-2', isValid ? 'bg-ok' : 'bg-bad')}
+      />
+      {isValid ? 'Meets rules' : 'Needs changes'}
+    </span>
   );
 };

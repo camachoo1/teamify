@@ -1,9 +1,11 @@
 import clsx from 'clsx';
 import { Edit2, Trash2 } from 'lucide-react';
 import useStore from '../../store/useStore';
+import { useShallow } from 'zustand/react/shallow';
 import { Team, Player } from '../../types';
 import { validateTeamComposition } from '../../utils/helper';
 import PlayerCard from './PlayerCard';
+import { getTeamColor } from '../../utils/teamColors';
 import {
   ValidationStatus,
   TeamCompositionWarning,
@@ -33,6 +35,9 @@ interface EnhancedTeamCardProps {
     playerId: number
   ) => void;
   onDragEnd: (e: React.DragEvent<HTMLDivElement>) => void;
+  selectedPlayerId: number | null;
+  onSelectPlayer: (playerId: number) => void;
+  onPlaceSelected: (teamIndex: number) => void;
 }
 
 export const EnhancedTeamCard = ({
@@ -50,13 +55,23 @@ export const EnhancedTeamCard = ({
   onEditTeam,
   onDragStart,
   onDragEnd,
+  selectedPlayerId,
+  onSelectPlayer,
+  onPlaceSelected,
 }: EnhancedTeamCardProps) => {
   const {
     players,
     skillCategories,
     teamCompositionRules,
     skillBalancingEnabled,
-  } = useStore();
+  } = useStore(
+    useShallow((state) => ({
+      players: state.players,
+      skillCategories: state.skillCategories,
+      teamCompositionRules: state.teamCompositionRules,
+      skillBalancingEnabled: state.skillBalancingEnabled,
+    }))
+  );
 
   const validation = validateTeamComposition(
     team,
@@ -87,207 +102,180 @@ export const EnhancedTeamCard = ({
   const skillDistribution = getTeamSkillDistribution(team.players);
   const hasValidationIssues =
     !validation.isValid && skillBalancingEnabled;
+  const canPlaceSelected =
+    selectedPlayerId !== null &&
+    !team.players.some((p) => p.id === selectedPlayerId);
+
+  const teamColor = getTeamColor(teamIndex);
 
   return (
     <div
+      role='group'
+      aria-label={team.name}
       className={clsx(
-        'group relative bg-gradient-to-br transition-all duration-300 rounded-2xl p-6',
-        // Validation-based styling
-        hasValidationIssues
-          ? [
-              'from-red-50 to-red-100 dark:from-red-900/20 dark:to-red-800/20',
-              'ring-2 ring-red-400 dark:ring-red-600',
-              'shadow-red-100 dark:shadow-red-900/20 shadow-lg',
-            ]
-          : [
-              'from-gray-50 to-gray-100 dark:from-gray-800/30 dark:to-gray-900/30',
-              dragOverTeam === teamIndex
-                ? 'ring-4 ring-primary ring-opacity-50 scale-[1.02]'
-                : 'hover:shadow-2xl hover:scale-[1.01]',
-            ]
+        'group relative animate-deal overflow-hidden rounded-[18px] border bg-surface transition-shadow',
+        hasValidationIssues ? 'border-bad/60' : 'border-line',
+        dragOverTeam === teamIndex &&
+          'ring-2 ring-accent ring-offset-2 ring-offset-paper'
       )}
+      style={{ animationDelay: `${Math.min(teamIndex, 8) * 60}ms` }}
       onDragOver={onDragOver}
       onDragEnter={(e) => onDragEnter(e, teamIndex)}
       onDragLeave={onDragLeave}
       onDrop={(e) => onDrop(e, teamIndex)}
     >
-      {/* Validation pulse animation overlay for invalid teams */}
-      {hasValidationIssues && (
-        <div className='absolute inset-0 rounded-2xl border-2 border-red-400 animate-pulse opacity-30 pointer-events-none' />
-      )}
+      <div className='h-2' style={{ backgroundColor: teamColor }} />
 
-      {/* Team Header */}
-      <div className='flex items-center justify-between mb-5'>
-        {editingTeamId === team.id ? (
-          <input
-            type='text'
-            defaultValue={team.name}
-            className={clsx(
-              'font-bold text-lg border-2 rounded px-2 py-1 focus:outline-none w-32',
-              hasValidationIssues
-                ? 'bg-red-50 dark:bg-red-900/20 border-red-400 dark:border-red-600'
-                : 'bg-white dark:bg-gray-800 border-primary'
-            )}
-            autoFocus
-            onClick={(e) => e.stopPropagation()}
-            onBlur={(e) => onTeamNameEdit(team.id, e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                onTeamNameEdit(team.id, e.currentTarget.value);
-              } else if (e.key === 'Escape') {
-                onEditTeam(-1); // Clear editing
-              }
-            }}
-          />
-        ) : (
-          <h3
-            className={clsx(
-              'font-bold text-lg flex items-center gap-2 cursor-pointer transition-colors',
-              hasValidationIssues
-                ? 'text-red-800 dark:text-red-200 hover:text-red-600 dark:hover:text-red-100'
-                : 'hover:text-primary'
-            )}
-            onClick={() => onEditTeam(team.id)}
-          >
-            {team.name}
-            <Edit2
-              size={14}
-              className='opacity-0 group-hover:opacity-50'
-            />
-          </h3>
-        )}
-
-        <div className='flex items-center gap-2'>
-          {/* Validation Status Indicator */}
-          {skillBalancingEnabled &&
-            Object.keys(teamCompositionRules).length > 0 && (
-              <ValidationStatus
-                isValid={validation.isValid}
-                violations={validation.violations}
-              />
-            )}
-
+      <div className='p-5'>
+        {/* Team Header */}
+        <div className='mb-4 flex items-start gap-3'>
           <span
-            className={clsx(
-              'text-xs px-3 py-1 rounded-full font-bold',
-              hasValidationIssues
-                ? 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-200'
-                : 'bg-primary/10 text-primary'
-            )}
+            className='font-display text-5xl font-black leading-[0.8]'
+            style={{ color: teamColor }}
+            aria-hidden='true'
           >
-            {team.players.length}{' '}
-            {team.players.length === 1 ? 'player' : 'players'}
+            {teamIndex + 1}
           </span>
+
+          <div className='min-w-0 flex-1'>
+            {editingTeamId === team.id ? (
+              <input
+                type='text'
+                defaultValue={team.name}
+                aria-label='Team name'
+                className='input-field h-9 px-3 font-semibold'
+                autoFocus
+                onClick={(e) => e.stopPropagation()}
+                onBlur={(e) => onTeamNameEdit(team.id, e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    onTeamNameEdit(team.id, e.currentTarget.value);
+                  } else if (e.key === 'Escape') {
+                    onEditTeam(-1); // Clear editing
+                  }
+                }}
+              />
+            ) : (
+              <h3>
+                <button
+                  type='button'
+                  className='flex max-w-full items-center gap-1.5 text-left font-display text-2xl font-bold leading-tight hover:text-accent'
+                  onClick={() => onEditTeam(team.id)}
+                  title='Rename team'
+                >
+                  <span className='truncate'>{team.name}</span>
+                  <Edit2
+                    size={13}
+                    className='shrink-0 text-muted opacity-60 [@media(hover:hover)]:opacity-0 group-hover:opacity-60 group-focus-within:opacity-60'
+                  />
+                </button>
+              </h3>
+            )}
+            <p className='flex items-center gap-2 text-sm text-muted'>
+              {team.players.length}{' '}
+              {team.players.length === 1 ? 'player' : 'players'}
+              {skillBalancingEnabled &&
+                Object.keys(teamCompositionRules).length > 0 && (
+                  <ValidationStatus
+                    isValid={validation.isValid}
+                    violations={validation.violations}
+                  />
+                )}
+            </p>
+          </div>
+
+          {canPlaceSelected && (
+            <button
+              type='button'
+              onClick={() => onPlaceSelected(teamIndex)}
+              className='btn-secondary h-8 px-3 text-xs'
+            >
+              Move here
+            </button>
+          )}
 
           {manualTeamMode && (
             <button
               onClick={() => onRemoveTeam(team.id)}
-              className={clsx(
-                'p-1 opacity-0 group-hover:opacity-100 transition-all',
-                hasValidationIssues
-                  ? 'text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-200'
-                  : 'text-gray-400 hover:text-red-500'
-              )}
-              title='Remove team'
+              className='icon-btn h-8 w-8 transition-opacity hover:text-bad [@media(hover:hover)]:opacity-0 group-hover:opacity-100 focus:opacity-100'
+              title='Delete team'
+              aria-label={`Delete ${team.name}`}
             >
-              <Trash2 size={16} />
+              <Trash2 size={15} />
             </button>
           )}
         </div>
-      </div>
 
-      {/* Team Composition Warning */}
-      {hasValidationIssues && (
-        <TeamCompositionWarning
-          violations={validation.violations}
-          skillDistribution={validation.skillDistribution}
-          skillCategories={skillCategories}
-        />
-      )}
+        {/* Team Composition Warning */}
+        {hasValidationIssues && (
+          <TeamCompositionWarning
+            violations={validation.violations}
+            skillDistribution={validation.skillDistribution}
+            skillCategories={skillCategories}
+          />
+        )}
 
-      {/* Skill Distribution */}
-      {skillDistribution && skillDistribution.length > 0 && (
-        <div className='mb-4 flex flex-wrap gap-1'>
-          {skillDistribution.map((skill) => {
-            const ruleInfo = validation.skillDistribution[skill.id];
-            const hasIssue =
-              ruleInfo && ruleInfo.actual !== ruleInfo.required;
+        {/* Skill Distribution */}
+        {skillDistribution && skillDistribution.length > 0 && (
+          <ul className='mb-3 flex flex-wrap gap-1.5'>
+            {skillDistribution.map((skill) => {
+              const ruleInfo = validation.skillDistribution[skill.id];
+              const hasIssue =
+                ruleInfo && ruleInfo.actual !== ruleInfo.required;
 
-            return (
-              <div
-                key={skill.id}
-                className={clsx(
-                  'flex items-center gap-1 px-2 py-1 rounded-full text-xs border',
-                  hasIssue
-                    ? 'bg-red-100 dark:bg-red-900/30 border-red-300 dark:border-red-600'
-                    : 'bg-white/50 dark:bg-gray-800/50 border-transparent'
-                )}
-                title={
-                  ruleInfo
-                    ? `${skill.name}: ${ruleInfo.actual}/${ruleInfo.required} required`
-                    : `${skill.name}: ${skill.count} players`
-                }
-              >
-                <div
-                  className='w-2 h-2 rounded-full'
-                  style={{ backgroundColor: skill.color }}
-                />
-                <span className='font-medium'>
-                  {skill.count}
-                  {ruleInfo && (
-                    <span
-                      className={clsx(
-                        'ml-1 text-xs',
-                        hasIssue
-                          ? 'text-red-600 dark:text-red-400'
-                          : 'text-gray-500'
-                      )}
-                    >
-                      /{ruleInfo.required}
-                    </span>
+              return (
+                <li
+                  key={skill.id}
+                  className={clsx(
+                    'chip font-medium',
+                    hasIssue && 'bg-bad/15 text-bad'
                   )}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-      )}
+                  title={
+                    ruleInfo
+                      ? `${skill.name}: ${ruleInfo.actual} of ${ruleInfo.required} required`
+                      : `${skill.name}: ${skill.count} players`
+                  }
+                >
+                  <span
+                    className='dot h-2 w-2'
+                    style={{ backgroundColor: skill.color }}
+                  />
+                  {skill.count}
+                  {ruleInfo && `/${ruleInfo.required}`}
+                </li>
+              );
+            })}
+          </ul>
+        )}
 
-      {/* Players */}
-      <div className='space-y-2 min-h-[120px]'>
+        {/* Players */}
         {team.players.length === 0 ? (
-          <div
-            className={clsx(
-              'flex items-center justify-center h-[120px] border-2 border-dashed rounded-xl transition-colors',
-              hasValidationIssues
-                ? 'border-red-300 dark:border-red-600 text-red-400 bg-red-50/50 dark:bg-red-900/10'
-                : 'border-gray-300 dark:border-gray-600 text-gray-400'
-            )}
-          >
-            <p className='text-sm font-medium'>
-              {manualTeamMode
-                ? 'Drag players here'
-                : 'Drop players here'}
-            </p>
+          <div className='grid min-h-[7rem] place-items-center rounded-xl border-2 border-dashed border-line px-4 text-center text-sm text-muted'>
+            {manualTeamMode
+              ? 'Drag players here, or select one and choose Move here.'
+              : 'Drop players here'}
           </div>
         ) : (
-          team.players.map((player, playerIndex) => {
-            const playerData = players.find(
-              (p) => p.id === player.id
-            );
-            if (!playerData) return null;
+          <div className='space-y-1.5'>
+            {team.players.map((player) => {
+              const playerData = players.find(
+                (p) => p.id === player.id
+              );
+              if (!playerData) return null;
 
-            return (
-              <PlayerCard
-                key={player.id}
-                player={player}
-                playerIndex={playerIndex}
-                isDraggable={!playerData.locked}
-                onDragStart={onDragStart}
-                onDragEnd={onDragEnd}
-              />
-            );
-          })
+              return (
+                <PlayerCard
+                  key={player.id}
+                  player={player}
+                  isDraggable={!playerData.locked}
+                  onDragStart={onDragStart}
+                  onDragEnd={onDragEnd}
+                  isSelected={selectedPlayerId === player.id}
+                  onSelect={onSelectPlayer}
+                />
+              );
+            })}
+          </div>
         )}
       </div>
     </div>
