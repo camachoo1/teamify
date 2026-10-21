@@ -37,19 +37,20 @@ export default function ResultDialog({
   const name = (id: number | null) =>
     tournament.teams.find((t) => t.id === id)?.name ?? 'Team';
 
-  const isValid =
-    Math.max(...scores) === need && Math.min(...scores) < need;
-  const isUnchanged =
-    match.status === 'done' &&
-    scores[0] === match.scoreA &&
-    scores[1] === match.scoreB;
+  const hasResult = match.status === 'done' || match.status === 'live';
+  // Any score works except both teams on the winning number; the series
+  // is decided once one team gets there
+  const isValid = Math.min(...scores) < need;
+  const isUnchanged = hasResult
+    ? scores[0] === match.scoreA && scores[1] === match.scoreB
+    : scores[0] === 0 && scores[1] === 0;
 
   // Saving can change who advances; say so if later results would be lost
+  const otherResults = (results: Record<string, unknown>) =>
+    Object.keys(results).filter((id) => id !== match.id).length;
   const laterResultsLost = isValid
-    ? Object.keys(tournament.results).length -
-      Object.keys(recordResult(tournament, match.id, ...scores).results)
-        .length +
-      (match.status === 'done' ? 0 : 1)
+    ? otherResults(tournament.results) -
+      otherResults(recordResult(tournament, match.id, ...scores).results)
     : 0;
 
   const setScore = (side: 0 | 1, value: number) =>
@@ -137,9 +138,13 @@ export default function ResultDialog({
           <p className='subtle min-h-[1.25rem]'>
             {winnerSide !== null
               ? `${name(winnerSide === 0 ? match.teamA : match.teamB)} win ${Math.max(...scores)} to ${Math.min(...scores)}.`
-              : Math.max(...scores) === need
+              : !isValid
               ? 'Only one team can reach the winning score.'
-              : `Enter the final score: the winner has ${need}.`}
+              : scores[0] === 0 && scores[1] === 0
+              ? 'Add maps as they finish, or enter the final score.'
+              : scores[0] === scores[1]
+              ? `Level at ${scores[0]} to ${scores[1]}. The series continues.`
+              : `${name(scores[0] > scores[1] ? match.teamA : match.teamB)} lead ${Math.max(...scores)} to ${Math.min(...scores)}. The series continues.`}
           </p>
 
           {laterResultsLost > 0 && !isUnchanged && (
@@ -152,7 +157,7 @@ export default function ResultDialog({
         </div>
 
         <div className='flex items-center justify-between gap-2 border-t border-line px-6 py-4'>
-          {match.status === 'done' ? (
+          {hasResult ? (
             <button onClick={onClear} className='btn-ghost -ml-3 hover:text-bad'>
               Clear result
             </button>
@@ -168,7 +173,7 @@ export default function ResultDialog({
               disabled={!isValid || isUnchanged}
               className='btn-primary'
             >
-              Save result
+              {winnerSide !== null ? 'Save result' : 'Save score'}
             </button>
           </div>
         </div>

@@ -21,7 +21,10 @@ export default function MatchCard({
       ? tournament.teams.find((t) => t.id === id)?.name ?? 'Team'
       : sourceLabel(tournament, match.sources[side], short);
 
-  const canEnter = match.status === 'ready' || match.status === 'done';
+  const canEnter =
+    match.status === 'ready' ||
+    match.status === 'live' ||
+    match.status === 'done';
   const rows = [
     { id: match.teamA, score: match.scoreA, side: 0 as const },
     { id: match.teamB, score: match.scoreB, side: 1 as const },
@@ -31,7 +34,13 @@ export default function MatchCard({
     <>
       <div className='mb-1.5 flex items-center justify-between gap-2 text-xs text-muted'>
         <span className='truncate'>{caption}</span>
-        <span className='shrink-0 font-semibold'>
+        <span className='flex shrink-0 items-center gap-1.5 font-semibold'>
+          {match.status === 'live' && (
+            <span className='flex items-center gap-1 text-accent'>
+              <span className='dot h-1.5 w-1.5 bg-accent' />
+              In progress
+            </span>
+          )}
           {match.status === 'walkover'
             ? 'Bye'
             : match.status === 'void'
@@ -97,13 +106,16 @@ export default function MatchCard({
       onClick={() => onOpen(match)}
       className={clsx(
         'w-60 rounded-xl p-2 text-left transition-colors hover:bg-sunk',
-        match.status === 'ready' && 'ring-1 ring-accent/60'
+        (match.status === 'ready' || match.status === 'live') &&
+          'ring-1 ring-accent/60'
       )}
-      aria-label={
+      aria-label={`${
         match.status === 'ready'
-          ? `Enter result: ${teamName(match.teamA, 0)} against ${teamName(match.teamB, 1)}`
-          : `Edit result: ${teamName(match.teamA, 0)} against ${teamName(match.teamB, 1)}`
-      }
+          ? 'Enter score'
+          : match.status === 'live'
+          ? `Update score, ${match.scoreA} to ${match.scoreB}`
+          : 'Edit result'
+      }: ${teamName(match.teamA, 0)} against ${teamName(match.teamB, 1)}`}
     >
       {body}
     </button>

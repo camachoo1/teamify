@@ -62,8 +62,9 @@ export interface MatchSpec {
   bestOf: number;
 }
 
-// A result is tied to the two teams it was entered for, so it is dropped
-// automatically if an earlier result changes who plays this match
+// The series score so far; the series is decided once a team reaches the
+// wins needed. A result is tied to the two teams it was entered for, so it
+// is dropped automatically if an earlier result changes who plays this match
 export interface MatchResult {
   teamA: number;
   teamB: number;
@@ -86,7 +87,8 @@ export interface Tournament {
 
 export type MatchStatus =
   | 'pending' // waiting on an earlier match
-  | 'ready' // both teams known, no result yet
+  | 'ready' // both teams known, no maps played yet
+  | 'live' // some maps played, no winner yet
   | 'done'
   | 'walkover' // one side is a bye; the other advances
   | 'void'; // not played (both sides empty, or an unneeded reset)

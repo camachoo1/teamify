@@ -41,7 +41,7 @@ Both generation paths branch on `skillBalancingEnabled`, and then on whether `te
 
 ### Tournaments
 - The header switches between the Teams and Tournament tabs (`activeView` in the store). A tournament is stored as `state.tournament`, and it holds its own copy of the teams, so later edits on the Teams tab don't change it. Randomizing teams during a tournament asks to end it first.
-- `src/tournament/engine.ts` holds the tournament logic as pure functions: single and double elimination (with optional bracket reset and split start), and groups then a bracket. Matches only store where each slot's team comes from (`Source`: a team, a bye, or the winner or loser of another match). `resolveMatches` works out teams, byes, winners and the champion from `results` each time. Results remember the two teams they were entered for, and are dropped automatically when an earlier result changes who plays.
+- `src/tournament/engine.ts` holds the tournament logic as pure functions: single and double elimination (with optional bracket reset and split start), and groups then a bracket. Matches only store where each slot's team comes from (`Source`: a team, a bye, or the winner or loser of another match). `resolveMatches` works out teams, byes, winners and the champion from `results` each time. A result is the series score so far, so it can be updated map by map; the series is decided when a team reaches the wins needed. Results remember the two teams they were entered for, and are dropped automatically when an earlier result changes who plays.
 - Group tables rank by series wins, then head-to-head among the tied teams, then map difference, then an order the organizer sets for ties that remain.
 - Tournaments are not part of share links yet.
 

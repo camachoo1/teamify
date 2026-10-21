@@ -326,7 +326,12 @@ export const resolveMatches = (tournament: Tournament): ResolvedMatch[] => {
       case 'winner':
       case 'loser': {
         const from = resolved.get(source.matchId);
-        if (!from || from.status === 'pending' || from.status === 'ready') {
+        if (
+          !from ||
+          from.status === 'pending' ||
+          from.status === 'ready' ||
+          from.status === 'live'
+        ) {
           return 'pending';
         }
         if (from.status === 'void') return 'dead';
@@ -354,7 +359,9 @@ export const resolveMatches = (tournament: Tournament): ResolvedMatch[] => {
     const resetState =
       match.stage !== 'reset' || !grand
         ? null
-        : grand.status === 'pending' || grand.status === 'ready'
+        : grand.status === 'pending' ||
+          grand.status === 'ready' ||
+          grand.status === 'live'
         ? 'pending' // waits on the first grand final
         : grand.status !== 'done' || grand.winner === grand.teamA
         ? 'void' // the upper-bracket team won: no reset needed
@@ -373,17 +380,16 @@ export const resolveMatches = (tournament: Tournament): ResolvedMatch[] => {
       out.status = 'ready';
       const result = tournament.results[match.id];
       const need = winsNeeded(match.bestOf);
-      if (
-        result &&
-        result.teamA === a &&
-        result.teamB === b &&
-        Math.max(result.scoreA, result.scoreB) === need
-      ) {
-        out.status = 'done';
+      if (result && result.teamA === a && result.teamB === b) {
         out.scoreA = result.scoreA;
         out.scoreB = result.scoreB;
-        out.winner = result.scoreA > result.scoreB ? a : b;
-        out.loser = out.winner === a ? b : a;
+        if (Math.max(result.scoreA, result.scoreB) === need) {
+          out.status = 'done';
+          out.winner = result.scoreA > result.scoreB ? a : b;
+          out.loser = out.winner === a ? b : a;
+        } else {
+          out.status = 'live';
+        }
       }
     }
 
@@ -434,9 +440,10 @@ const pruneStaleResults = (tournament: Tournament): Tournament => {
 };
 
 /**
- * Records a series score. One side must have exactly the wins needed.
- * Later results that no longer apply (because a different team now
- * advances) are removed.
+ * Records a series score, either finished (one side has the wins needed)
+ * or in progress, map by map. 0-0 clears the result. Later results that no
+ * longer apply (because a different team now advances, or nobody does yet)
+ * are removed.
  */
 export const recordResult = (
   tournament: Tournament,
@@ -450,10 +457,13 @@ export const recordResult = (
   }
   const need = winsNeeded(match.bestOf);
   const valid =
-    Math.max(scoreA, scoreB) === need &&
-    Math.min(scoreA, scoreB) < need &&
-    Math.min(scoreA, scoreB) >= 0;
+    Number.isInteger(scoreA) &&
+    Number.isInteger(scoreB) &&
+    Math.min(scoreA, scoreB) >= 0 &&
+    Math.max(scoreA, scoreB) <= need &&
+    Math.min(scoreA, scoreB) < need;
   if (!valid) return tournament;
+  if (scoreA === 0 && scoreB === 0) return clearResult(tournament, matchId);
 
   const result: MatchResult = {
     teamA: match.teamA,
