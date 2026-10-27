@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { ArrowLeft, ExternalLink, Loader2 } from 'lucide-react';
 import { decodeShareData, isChallongeUrl } from '../utils/share';
 import { getTeamColor } from '../utils/teamColors';
-import TopoBackdrop from './TopoBackdrop';
+import BracketBackdrop from './BracketBackdrop';
 
 interface SharedTeam {
   n: string; // name
@@ -162,7 +162,6 @@ export default function ShareView() {
 
   const shell = (content: React.ReactNode) => (
     <div className='relative isolate flex min-h-screen flex-col'>
-      <TopoBackdrop />
       <header className='border-b border-line bg-paper/95'>
         <div className='mx-auto flex h-16 max-w-[1400px] items-center justify-between gap-3 px-4 sm:px-8'>
           <span className='font-display text-3xl font-black uppercase leading-none tracking-tight'>
@@ -217,16 +216,22 @@ export default function ShareView() {
   return shell(
     <>
       {/* Event */}
-      <h1 className='font-display text-5xl font-extrabold uppercase leading-[0.95] tracking-tight sm:text-7xl'>
-        {sharedData.e || 'Untitled event'}
-      </h1>
-      <p className='mt-3 text-muted'>
-        {sharedData.o ? `Organized by ${sharedData.o}. ` : ''}
-        {sharedData.t.length} {sharedData.t.length === 1 ? 'team' : 'teams'}{' '}
-        and {playingCount} {playingCount === 1 ? 'player' : 'players'}
-        {reserves.length > 0 ? `, plus ${reserves.length} on the bench` : ''}
-        . Shared {formatDate(sharedData.ts)}.
-      </p>
+      <div className='relative isolate'>
+        <BracketBackdrop />
+        <h1 className='font-display text-5xl font-extrabold uppercase leading-[0.95] tracking-tight sm:text-7xl lg:max-w-[calc(100%-22rem)]'>
+          {sharedData.e || 'Untitled event'}
+        </h1>
+        <p className='mt-3 text-muted'>
+          {sharedData.o ? `Organized by ${sharedData.o}. ` : ''}
+          {sharedData.t.length}{' '}
+          {sharedData.t.length === 1 ? 'team' : 'teams'} and{' '}
+          {playingCount} {playingCount === 1 ? 'player' : 'players'}
+          {reserves.length > 0
+            ? `, plus ${reserves.length} on the bench`
+            : ''}
+          . Shared {formatDate(sharedData.ts)}.
+        </p>
+      </div>
 
       {showSkills && (
         <ul className='mt-5 flex flex-wrap items-center gap-2'>

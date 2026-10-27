@@ -1,8 +1,15 @@
 import { Check } from 'lucide-react';
 import { useForm } from 'react-hook-form';
-import { useEffect, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
 import useStore from '../store/useStore';
 import { useShallow } from 'zustand/react/shallow';
+import BracketBackdrop from './BracketBackdrop';
 
 interface EventForm {
   eventName: string;
@@ -42,8 +49,31 @@ export default function EventSettings() {
 
   useEffect(() => () => clearTimeout(successTimer.current), []);
 
+  // The title is a textarea so long names wrap; grow it to fit its text
+  const titleRef = useRef<HTMLTextAreaElement | null>(null);
+  const { ref: registerTitle, ...titleField } = register('eventName');
+
+  const resizeTitle = useCallback(() => {
+    const el = titleRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight}px`;
+  }, []);
+
+  useLayoutEffect(resizeTitle, [eventName, resizeTitle]);
+
+  useEffect(() => {
+    // The display font changes where lines wrap, so measure again once
+    // it has loaded
+    document.fonts?.ready.then(resizeTitle);
+    window.addEventListener('resize', resizeTitle);
+    return () => window.removeEventListener('resize', resizeTitle);
+  }, [resizeTitle]);
+
   const onSubmit = (data: EventForm) => {
-    setEventInfo(data.eventName.trim(), data.organizerName.trim());
+    // Pasted line breaks would split the title, so join them
+    const name = data.eventName.replace(/\s*\n\s*/g, ' ').trim();
+    setEventInfo(name, data.organizerName.trim());
     setShowSuccess(true);
 
     // Reset to normal state after 2 seconds
@@ -57,15 +87,28 @@ export default function EventSettings() {
     <form
       onSubmit={handleSubmit(onSubmit)}
       data-tour='event-settings'
-      className='rounded-panel'
+      className='relative isolate rounded-panel'
     >
+      <BracketBackdrop />
       <label htmlFor='event-name' className='sr-only'>
         Event name
       </label>
-      <input
+      <textarea
         id='event-name'
-        {...register('eventName')}
-        className='w-full bg-transparent font-display text-5xl font-extrabold uppercase leading-[0.95] tracking-tight placeholder:text-muted/45 focus:outline-none sm:text-7xl'
+        rows={1}
+        {...titleField}
+        ref={(el) => {
+          registerTitle(el);
+          titleRef.current = el;
+        }}
+        onInput={resizeTitle}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            handleSubmit(onSubmit)();
+          }
+        }}
+        className='block w-full resize-none overflow-hidden bg-transparent font-display text-5xl font-extrabold uppercase leading-[0.95] tracking-tight placeholder:text-muted/45 focus:outline-none sm:text-7xl lg:max-w-[calc(100%-22rem)]'
         placeholder='Name your event'
         autoComplete='off'
       />

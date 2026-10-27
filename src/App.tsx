@@ -8,7 +8,6 @@ import PlayerDisplay from './components/players/PlayerDisplay';
 import TeamDisplay from './components/teams/TeamDisplay';
 import Footer from './components/Footer';
 import OnboardingOverlay from './components/OnboardingOverlay';
-import TopoBackdrop from './components/TopoBackdrop';
 import TournamentView from './components/tournament/TournamentView';
 
 function App() {
@@ -60,8 +59,6 @@ function App() {
   return (
     <>
       <div className='relative isolate flex min-h-screen flex-col'>
-        <TopoBackdrop />
-
         <Header />
 
         <main className='mx-auto w-full max-w-[1400px] flex-1 px-4 pb-16 pt-8 sm:px-8'>

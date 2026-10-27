@@ -16,8 +16,8 @@
     --gold: 224 150 32; /* #E09620 amber, for locks */
     --ok: 22 150 110; /* #16966E */
     --bad: 214 52 70; /* #D63446 */
-    --contour: 184 214 222; /* topo lines */
-    --contour-index: 150 196 208;
+    --bracket-line: 184 214 222; /* title backdrop */
+    --bracket-final: 150 196 208;
     color-scheme: light;
   }
 
@@ -33,8 +33,8 @@
     --gold: 242 186 80;
     --ok: 74 210 160;
     --bad: 255 112 124;
-    --contour: 20 52 62;
-    --contour-index: 28 72 86;
+    --bracket-line: 20 52 62;
+    --bracket-final: 28 72 86;
     color-scheme: dark;
   }
 
@@ -67,9 +67,11 @@
 }
 
 @layer components {
-  /* Topographic contour lines behind the page */
-  .topo-backdrop {
-    @apply pointer-events-none fixed inset-0 -z-10 h-full w-full;
+  /* Bracket lines behind the event title, fading out toward the text.
+     Hidden on small screens, where the title needs the full width. */
+  .bracket-backdrop {
+    @apply pointer-events-none absolute -top-8 right-0 -z-10 hidden h-52 w-[70%] lg:block;
+    mask-image: linear-gradient(to left, black 30%, transparent 95%);
   }
 
   .panel,
